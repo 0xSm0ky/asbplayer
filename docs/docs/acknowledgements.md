@@ -50,7 +50,8 @@ We epecially acknowledge the wonderful humans below.
 [@xwxb](https://github.com/xwxb),
 [@yqmmm](https://github.com/yqmmm),
 [@jprostko](https://github.com/jprostko),
-[@rodrigo-suarezmajor](https://github.com/rodrigo-suarezmajor)
+[@rodrigo-suarezmajor](https://github.com/rodrigo-suarezmajor),
+[@Roka20012](https://github.com/Roka20012)
 
 ## Translators
 
