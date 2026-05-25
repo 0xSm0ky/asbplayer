@@ -1356,16 +1356,17 @@ function App({
                     return;
                 }
 
-                if (dataTransfer.items && dataTransfer.items.length > 0) {
-                    void extractDropFileHandles(dataTransfer.items)
-                        .then((fileHandles) => persistFileSessionHandles(fileHandles))
-                        .catch((e) => {
-                            console.warn('Failed to collect dropped file handles:', e);
-                        });
-                }
+                // FIXME: Re-enable once we know how to fix or workaround RESULT_CODE_KILLED_BAD_MESSAGE crash
+                // if (dataTransfer.items && dataTransfer.items.length > 0) {
+                //     void extractDropFileHandles(dataTransfer.items)
+                //         .then((fileHandles) => persistFileSessionHandles(fileHandles))
+                //         .catch((e) => {
+                //             console.warn('Failed to collect dropped file handles:', e);
+                //         });
+                // }
             }
         },
-        [inVideoPlayer, handleError, handleFiles, handleDirectory, ankiDialogOpen, t, persistFileSessionHandles]
+        [inVideoPlayer, handleError, handleFiles, handleDirectory, ankiDialogOpen, t]
     );
 
     const handleFileInputChange = useCallback(() => {
