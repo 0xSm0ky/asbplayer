@@ -1878,19 +1878,21 @@ export default function VideoPlayer({
             {/* Optional blur mask overlay; constrained to the video bounds within the player container */}
             {blurOverlayVisible && <BlurOverlay anchorRef={containerRef} containerRef={videoRef} />}
             {/* this video is for getting the seek preview below */}
-            <video
-                src={videoFile}
-                muted
-                preload="none"
-                autoPlay={false}
-                style={{ position: 'absolute', left: '-9999px' }}
-                ref={(node) => {
-                    hiddenVideoRef.current = node;
-                    if (node) {
-                        setHiddenVideoReady(true);
-                    }
-                }}
-            />
+            {miscSettings.thumbnailPreview && (
+                <video
+                    src={videoFile}
+                    muted
+                    preload="none"
+                    autoPlay={false}
+                    style={{ position: 'absolute', left: '-9999px' }}
+                    ref={(node) => {
+                        hiddenVideoRef.current = node;
+                        if (node) {
+                            setHiddenVideoReady(true);
+                        }
+                    }}
+                />
+            )}
             {topSubtitleElements.length > 0 && (
                 <SubtitleContainer
                     alignment={'top'}
