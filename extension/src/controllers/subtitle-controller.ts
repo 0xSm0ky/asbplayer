@@ -33,7 +33,12 @@ import {
     ANNOTATIONS_VIDEO_RENDER_BEHIND_MS,
     ANNOTATIONS_VIDEO_RENDER_AHEAD_MS,
 } from '@project/common/annotations';
-import { arrayEquals, compareSubtitlesForDisplay, computeStyleString, surroundingSubtitles } from '@project/common/util';
+import {
+    arrayEquals,
+    compareSubtitlesForDisplay,
+    computeStyleString,
+    surroundingSubtitles,
+} from '@project/common/util';
 import i18n from 'i18next';
 import {
     CachingElementOverlay,
