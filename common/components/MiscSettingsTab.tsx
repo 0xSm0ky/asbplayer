@@ -59,6 +59,7 @@ const MiscSettingTab: React.FC<Props> = ({
         subtitleRegexFilterTextReplacement,
         subtitleHtml,
         convertNetflixRuby,
+        convertHindiToUrdu,
         pauseOnHoverMode,
         webSocketClientEnabled,
         webSocketServerUrl,
@@ -233,6 +234,16 @@ const MiscSettingTab: React.FC<Props> = ({
                         />
                     }
                     label={t('settings.convertNetflixRuby')}
+                    labelPlacement="start"
+                />
+                <SwitchLabelWithHoverEffect
+                    control={
+                        <Switch
+                            checked={convertHindiToUrdu}
+                            onChange={(event) => onSettingChanged('convertHindiToUrdu', event.target.checked)}
+                        />
+                    }
+                    label={t('settings.convertHindiToUrdu')}
                     labelPlacement="start"
                 />
                 {(!extensionInstalled || extensionSupportsPauseOnHover) && (

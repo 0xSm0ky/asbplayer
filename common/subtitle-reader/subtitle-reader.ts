@@ -4,6 +4,7 @@ import { WebVTT } from 'videojs-vtt.js';
 import { XMLParser } from 'fast-xml-parser';
 import { SubtitleHtml, SubtitleTextImage, Token, Tokenization } from '@project/common';
 import DOMPurify from 'dompurify';
+import { convertDevanagariToUrdu } from './hindi-urdu-transliteration';
 
 const vttClassRegex = /<(\/)?c(\.[^>]*)?>/g;
 const assNewLineRegex = RegExp(/\\[nN]/, 'ig');
@@ -62,6 +63,7 @@ export default class SubtitleReader {
     private readonly _textFilter?: TextFilter;
     private readonly _removeXml: boolean;
     private readonly _convertNetflixRuby: boolean;
+    private readonly _convertHindiToUrdu: boolean;
     private readonly _pgsWorkerFactory: () => Promise<Worker>;
     private xmlParser?: XMLParser;
 
@@ -70,12 +72,14 @@ export default class SubtitleReader {
         regexFilterTextReplacement,
         subtitleHtml,
         convertNetflixRuby,
+        convertHindiToUrdu,
         pgsParserWorkerFactory: pgsWorkerFactory,
     }: {
         regexFilter: string;
         regexFilterTextReplacement: string;
         subtitleHtml: SubtitleHtml;
         convertNetflixRuby: boolean;
+        convertHindiToUrdu: boolean;
         pgsParserWorkerFactory: () => Promise<Worker>;
     }) {
         let regex: RegExp | undefined;
@@ -94,6 +98,7 @@ export default class SubtitleReader {
 
         this._removeXml = subtitleHtml === SubtitleHtml.remove;
         this._convertNetflixRuby = convertNetflixRuby;
+        this._convertHindiToUrdu = convertHindiToUrdu;
 
         this._pgsWorkerFactory = pgsWorkerFactory;
     }
@@ -553,6 +558,10 @@ export default class SubtitleReader {
 
         if (this._removeXml) {
             text = this._decodeHTML(text);
+        }
+
+        if (this._convertHindiToUrdu) {
+            text = convertDevanagariToUrdu(text);
         }
 
         return text;

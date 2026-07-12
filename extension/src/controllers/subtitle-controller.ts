@@ -98,6 +98,7 @@ export default class SubtitleController {
     surroundingSubtitlesTimeRadius: number;
     autoCopyCurrentSubtitle: boolean;
     convertNetflixRuby: boolean;
+    convertHindiToUrdu: boolean;
     subtitleHtml: SubtitleHtml;
     refreshCurrentSubtitle: boolean;
     _preCacheDom;
@@ -132,6 +133,7 @@ export default class SubtitleController {
         this.showingLoadedMessage = false;
         this.autoCopyCurrentSubtitle = false;
         this.convertNetflixRuby = false;
+        this.convertHindiToUrdu = false;
         this.subtitleHtml = SubtitleHtml.remove;
         this.refreshCurrentSubtitle = false;
         const { subtitlesElementOverlay, topSubtitlesElementOverlay, notificationElementOverlay } = this._overlays();

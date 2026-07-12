@@ -424,6 +424,7 @@
         "subtitleRegexFilter": "字幕正则筛选器",
         "subtitleRegexFilterTextReplacement": "字幕正则筛选器文本替换",
         "convertNetflixRuby": "Detect and Display Ruby",
+        "convertHindiToUrdu": "Convert Hindi Subtitles to Urdu Script",
         "subtitleHtml": "Subtitle HTML",
         "subtitleHtmlRemove": "Remove",
         "subtitleHtmlRender": "Render",

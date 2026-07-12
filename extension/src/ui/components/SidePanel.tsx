@@ -77,6 +77,7 @@ export default function SidePanel({ dictionaryProvider, settingsProvider, settin
                 regexFilterTextReplacement: settings.subtitleRegexFilterTextReplacement,
                 subtitleHtml: settings.subtitleHtml,
                 convertNetflixRuby: settings.convertNetflixRuby,
+                convertHindiToUrdu: settings.convertHindiToUrdu,
                 pgsParserWorkerFactory,
             }),
         [settings]

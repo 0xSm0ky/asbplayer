@@ -248,6 +248,7 @@ function App({
             regexFilterTextReplacement: settings.subtitleRegexFilterTextReplacement,
             subtitleHtml: settings.subtitleHtml,
             convertNetflixRuby: settings.convertNetflixRuby,
+            convertHindiToUrdu: settings.convertHindiToUrdu,
             pgsParserWorkerFactory: async () => new pgsParserWorkerFactory(),
         });
     }, [
@@ -255,6 +256,7 @@ function App({
         settings.subtitleRegexFilterTextReplacement,
         settings.subtitleHtml,
         settings.convertNetflixRuby,
+        settings.convertHindiToUrdu,
     ]);
     const webSocketClient = useAppWebSocketClient({ settings });
     const [subtitles, setSubtitles] = useState<DisplaySubtitleModel[]>([]);

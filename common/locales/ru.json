@@ -424,6 +424,7 @@
         "subtitleRegexFilter": "Пропускать субтитры через фильтр с регулярным выражением",
         "subtitleRegexFilterTextReplacement": "Текст на замену при использовании регулярных выражений",
         "convertNetflixRuby": "Detect and Display Ruby",
+        "convertHindiToUrdu": "Convert Hindi Subtitles to Urdu Script",
         "subtitleHtml": "HTML субтитров",
         "subtitleHtmlRemove": "Убрать",
         "subtitleHtmlRender": "Рендерить",

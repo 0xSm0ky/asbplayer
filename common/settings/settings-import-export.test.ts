@@ -136,6 +136,7 @@ it('validates exported settings', () => {
         subtitleRegexFilter: '',
         subtitleRegexFilterTextReplacement: '',
         convertNetflixRuby: false,
+        convertHindiToUrdu: false,
         subtitleHtml: 1,
         language: 'en',
         customAnkiFields: {},
