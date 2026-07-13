@@ -1,0 +1,2 @@
+cd scripts/web-socket-server
+go run main.go
