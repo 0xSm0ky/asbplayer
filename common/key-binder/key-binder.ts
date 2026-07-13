@@ -1,26 +1,54 @@
 import { SubtitleModel } from '../src/model';
 import hotkeys from 'hotkeys-js';
-import { KeyBindSet, TokenStatus } from '../settings/settings';
+import { isTrackSeekable, KeyBindSet, SeekableTracks, TokenStatus } from '../settings/settings';
 
-export function adjacentSubtitle(forward: boolean, time: number, subtitles: SubtitleModel[]) {
+export function adjacentSubtitle(
+    forward: boolean,
+    time: number,
+    subtitles: SubtitleModel[],
+    seekableTracks: SeekableTracks
+) {
     const now = time;
     let adjacentSubtitleIndex = -1;
     let minDiff = Number.MAX_SAFE_INTEGER;
 
-    for (let i = 0; i < subtitles.length; ++i) {
-        const s = subtitles[i];
-        const diff = forward ? s.start - now : now - s.start;
+    if (forward) {
+        for (let i = 0; i < subtitles.length; ++i) {
+            const s = subtitles[i];
 
-        if (minDiff <= diff) {
-            continue;
+            if (!isTrackSeekable(seekableTracks, s.track)) {
+                continue;
+            }
+
+            const diff = s.start - now;
+
+            if (minDiff <= diff) {
+                continue;
+            }
+
+            if (now < s.start) {
+                minDiff = diff;
+                adjacentSubtitleIndex = i;
+            }
         }
+    } else {
+        for (let i = subtitles.length - 1; i >= 0; --i) {
+            const s = subtitles[i];
 
-        if (forward && now < s.start) {
-            minDiff = diff;
-            adjacentSubtitleIndex = i;
-        } else if (!forward && now > s.start) {
-            minDiff = diff;
-            adjacentSubtitleIndex = now < s.end ? Math.max(0, i - 1) : i;
+            if (!isTrackSeekable(seekableTracks, s.track)) {
+                continue;
+            }
+
+            const diff = now - s.end;
+
+            if (minDiff <= diff) {
+                continue;
+            }
+
+            if (now > s.end) {
+                minDiff = diff;
+                adjacentSubtitleIndex = i;
+            }
         }
     }
 
@@ -63,6 +91,7 @@ export interface KeyBinder {
         disabledGetter: () => boolean,
         timeGetter: () => number,
         subtitlesGetter: () => SubtitleModel[] | undefined,
+        seekableTracksGetter: () => SeekableTracks,
         capture?: boolean
     ): () => void;
     bindSeekToBeginningOfCurrentSubtitle(
@@ -70,6 +99,7 @@ export interface KeyBinder {
         disabledGetter: () => boolean,
         timeGetter: () => number,
         subtitlesGetter: () => SubtitleModel[] | undefined,
+        seekableTracksGetter: () => SeekableTracks,
         capture?: boolean
     ): () => void;
     bindSeekBackwardOrForward(
@@ -82,6 +112,7 @@ export interface KeyBinder {
         disabledGetter: () => boolean,
         timeGetter: () => number,
         subtitlesGetter: () => SubtitleModel[] | undefined,
+        seekableTracksGetter: () => SeekableTracks,
         capture?: boolean
     ): () => void;
     bindAdjustOffset(
@@ -168,6 +199,11 @@ export interface KeyBinder {
     ): () => void;
     bindToggleHoveredTokenIgnored(
         onToggleHoveredTokenIgnored: (event: KeyboardEvent) => void,
+        disabledGetter: () => boolean,
+        capture?: boolean
+    ): () => void;
+    bindOpenStatistics(
+        onOpenStatistics: (event: KeyboardEvent) => void,
         disabledGetter: () => boolean,
         capture?: boolean
     ): () => void;
@@ -343,6 +379,7 @@ export class DefaultKeyBinder implements KeyBinder {
         disabledGetter: () => boolean,
         timeGetter: () => number,
         subtitlesGetter: () => SubtitleModel[] | undefined,
+        seekableTracksGetter: () => SeekableTracks,
         capture = false
     ) {
         const delegate = (event: KeyboardEvent, forward: boolean) => {
@@ -356,7 +393,7 @@ export class DefaultKeyBinder implements KeyBinder {
                 return false;
             }
 
-            const subtitle = adjacentSubtitle(forward, timeGetter(), subtitles);
+            const subtitle = adjacentSubtitle(forward, timeGetter(), subtitles, seekableTracksGetter());
 
             if (subtitle !== null && subtitle.start >= 0 && subtitle.end >= 0) {
                 onSeekToSubtitle(event, subtitle);
@@ -392,6 +429,7 @@ export class DefaultKeyBinder implements KeyBinder {
         disabledGetter: () => boolean,
         timeGetter: () => number,
         subtitlesGetter: () => SubtitleModel[] | undefined,
+        seekableTracksGetter: () => SeekableTracks,
         capture = false
     ) {
         const shortcut = this.keyBindSet.seekToBeginningOfCurrentSubtitle.keys;
@@ -411,7 +449,7 @@ export class DefaultKeyBinder implements KeyBinder {
                 return false;
             }
 
-            const subtitle = this._currentOrPreviousSubtitle(timeGetter(), subtitles);
+            const subtitle = this._currentOrPreviousSubtitle(timeGetter(), subtitles, seekableTracksGetter());
 
             if (subtitle !== undefined && subtitle.start >= 0 && subtitle.end >= 0) {
                 onSeekToBeginningOfCurrentSubtitle(event, subtitle);
@@ -423,7 +461,7 @@ export class DefaultKeyBinder implements KeyBinder {
         return this._bind(shortcut, capture, handler);
     }
 
-    _currentOrPreviousSubtitle(time: number, subtitles: SubtitleModel[]) {
+    _currentOrPreviousSubtitle(time: number, subtitles: SubtitleModel[], seekableTracks: SeekableTracks) {
         const now = time;
         let currentSubtitle: SubtitleModel | undefined;
         let previousSubtitle: SubtitleModel | undefined;
@@ -432,7 +470,7 @@ export class DefaultKeyBinder implements KeyBinder {
         for (let i = 0; i < subtitles.length; ++i) {
             const s = subtitles[i];
 
-            if (s.start < 0 || s.end < 0) {
+            if (!isTrackSeekable(seekableTracks, s.track) || s.start < 0 || s.end < 0) {
                 continue;
             }
 
@@ -491,6 +529,7 @@ export class DefaultKeyBinder implements KeyBinder {
         disabledGetter: () => boolean,
         timeGetter: () => number,
         subtitlesGetter: () => SubtitleModel[] | undefined,
+        seekableTracksGetter: () => SeekableTracks,
         capture = false
     ) {
         const delegate = (event: KeyboardEvent, forward: boolean) => {
@@ -505,7 +544,7 @@ export class DefaultKeyBinder implements KeyBinder {
             }
 
             const time = timeGetter();
-            const subtitle = adjacentSubtitle(forward, time, subtitles);
+            const subtitle = adjacentSubtitle(forward, time, subtitles, seekableTracksGetter());
 
             if (subtitle !== null) {
                 const subtitleStart = subtitle.originalStart;
@@ -734,7 +773,7 @@ export class DefaultKeyBinder implements KeyBinder {
             onToggleSubtitleTrack(event, track);
             return true;
         };
-        let unbindHandlers: (() => void)[] = [];
+        const unbindHandlers: (() => void)[] = [];
 
         for (let i = 0; i < shortcuts.length; ++i) {
             const handler = (event: KeyboardEvent) => delegate(event, i);
@@ -774,7 +813,7 @@ export class DefaultKeyBinder implements KeyBinder {
             return true;
         };
 
-        let unbindHandlers: (() => void)[] = [];
+        const unbindHandlers: (() => void)[] = [];
 
         for (let i = 0; i < 9; ++i) {
             const handler = (event: KeyboardEvent) => delegate(event, i);
@@ -813,7 +852,7 @@ export class DefaultKeyBinder implements KeyBinder {
             onUnblurTrack(event, track);
             return true;
         };
-        let unbindHandlers: (() => void)[] = [];
+        const unbindHandlers: (() => void)[] = [];
 
         for (let i = 0; i < shortcuts.length; ++i) {
             const handler = (event: KeyboardEvent) => delegate(event, i);
@@ -977,10 +1016,10 @@ export class DefaultKeyBinder implements KeyBinder {
             onMarkHoveredToken(event, tokenStatus);
             return true;
         };
-        let unbindHandlers: (() => void)[] = [];
+        const unbindHandlers: (() => void)[] = [];
 
         for (let i = 0; i < shortcuts.length; ++i) {
-            const handler = (event: KeyboardEvent) => delegate(event, i as TokenStatus);
+            const handler = (event: KeyboardEvent) => delegate(event, i);
             const unbindHandler = shortcuts[i] ? this._bind(shortcuts[i], capture, handler) : () => {};
             unbindHandlers.push(unbindHandler);
         }
@@ -1010,6 +1049,28 @@ export class DefaultKeyBinder implements KeyBinder {
             }
 
             onToggleHoveredTokenIgnored(event);
+            return true;
+        };
+        return this._bind(shortcut, capture, handler);
+    }
+
+    bindOpenStatistics(
+        onOpenStatistics: (event: KeyboardEvent) => void,
+        disabledGetter: () => boolean,
+        capture = false
+    ) {
+        const shortcut = this.keyBindSet.openStatistics.keys;
+
+        if (!shortcut) {
+            return () => {};
+        }
+
+        const handler = (event: KeyboardEvent) => {
+            if (disabledGetter()) {
+                return false;
+            }
+
+            onOpenStatistics(event);
             return true;
         };
         return this._bind(shortcut, capture, handler);

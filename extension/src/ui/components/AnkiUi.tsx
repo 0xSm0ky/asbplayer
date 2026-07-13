@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Image,
-    ImageModel,
+    MediaFragmentModel,
     AudioModel,
     SubtitleModel,
     AnkiUiState,
+    AnkiUiInitialState,
     AnkiUiResumeState,
     AnkiUiSavedState,
     AnkiUiBridgeRerecordMessage,
@@ -20,8 +20,6 @@ import {
     AnkiDialogSettings,
     AnkiUiBridgeExportedMessage,
     AnkiDialogDismissedQuickSelectFtueMessage,
-    CardUpdatedDialogMessage,
-    CardExportedDialogMessage,
 } from '@project/common';
 import { createTheme } from '@project/common/theme';
 import type { Profile } from '@project/common/settings';
@@ -46,7 +44,7 @@ interface Props {
 
 const blobToDataUrl = async (blob: Blob): Promise<string> => {
     return new Promise((resolve) => {
-        var reader = new FileReader();
+        const reader = new FileReader();
         reader.onload = () => {
             resolve(reader.result as string);
         };
@@ -62,8 +60,7 @@ export default function AnkiUi({ bridge }: Props) {
     const [surroundingSubtitles, setSurroundingSubtitles] = useState<SubtitleModel[]>();
     const [text, setText] = useState<string>();
     const [serializedAudio, setSerializedAudio] = useState<AudioModel>();
-    const [image, setImage] = useState<Image>();
-    const [serializedImage, setSerializedImage] = useState<ImageModel>();
+    const [serializedImage, setSerializedImage] = useState<MediaFragmentModel>();
     const [file, setFile] = useState<FileModel>();
     const [source, setSource] = useState<string>('');
     const [url, setUrl] = useState<string>('');
@@ -91,6 +88,8 @@ export default function AnkiUi({ bridge }: Props) {
         [settings, bridge]
     );
     const dialogStateRef = useRef<AnkiDialogState>(undefined);
+    const openCardSelectDialogActionRef = useRef<() => void>(undefined);
+    const [initialCardSelectDialogOpen, setInitialCardSelectDialogOpen] = useState<boolean>(false);
 
     const savedState = useCallback(() => {
         const dialogState = dialogStateRef.current!;
@@ -130,6 +129,10 @@ export default function AnkiUi({ bridge }: Props) {
                 setInitialTimestampInterval(undefined);
                 setLastAppliedTimestampIntervalToText(undefined);
                 setLastAppliedTimestampIntervalToAudio(undefined);
+                if ((s as AnkiUiInitialState).cardSelectOpen) {
+                    openCardSelectDialogActionRef.current?.();
+                    setInitialCardSelectDialogOpen(true);
+                }
             } else if (s.type === 'resume') {
                 const state = s as AnkiUiResumeState;
                 setInitialTimestampInterval(state.initialTimestampInterval);
@@ -156,12 +159,11 @@ export default function AnkiUi({ bridge }: Props) {
             setSettings(s.settings);
             setActiveProfile(s.activeProfile);
             setProfiles(s.profiles);
-            setImage(image);
             setOpen(s.open);
             setFtueHasSeenAnkiDialogQuickSelect(s.ftueHasSeenAnkiDialogQuickSelect);
             setInTutorial(s.inTutorial);
         });
-    }, [bridge, image]);
+    }, [bridge]);
 
     useEffect(() => bridge.serverIsReady(), [bridge]);
 
@@ -188,17 +190,17 @@ export default function AnkiUi({ bridge }: Props) {
                     bridge.sendMessageFromServer(message);
                 }
 
-                if (params.mode === 'updateLast') {
-                    bridge.sendMessageFromServer({ command: 'card-updated-dialog' } as CardUpdatedDialogMessage);
+                if (params.mode === 'updateLast' || params.mode === 'updateSpecific') {
+                    bridge.sendMessageFromServer({ command: 'card-updated-dialog' });
                 } else if (params.mode === 'default') {
-                    bridge.sendMessageFromServer({ command: 'card-exported-dialog' } as CardExportedDialogMessage);
+                    bridge.sendMessageFromServer({ command: 'card-exported-dialog' });
                 }
             } catch (e) {
                 console.error(e);
                 setAlertSeverity('error');
 
                 if (e instanceof Error) {
-                    setAlert((e as Error).message);
+                    setAlert(e.message);
                 } else {
                     setAlert(String(e));
                 }
@@ -230,8 +232,8 @@ export default function AnkiUi({ bridge }: Props) {
         const message: AnkiUiBridgeRerecordMessage = {
             command: 'rerecord',
             uiState: state,
-            recordStart: state.timestampInterval![0],
-            recordEnd: state.timestampInterval![1],
+            recordStart: state.timestampInterval[0],
+            recordEnd: state.timestampInterval[1],
         };
 
         bridge.sendMessageFromServer(message);
@@ -342,7 +344,7 @@ export default function AnkiUi({ bridge }: Props) {
                 messageId: uuidv4(),
             };
             const { base64 } = await bridge.sendMessageFromServerAndExpectResponse(encodeMp3Message, 60_000);
-            return await base64ToBlob(base64, 'audio/mp3');
+            return base64ToBlob(base64, 'audio/mp3');
         },
         [bridge]
     );
@@ -387,6 +389,8 @@ export default function AnkiUi({ bridge }: Props) {
                         showQuickSelectFtue={showAnkiDialogQuickSelectFtue}
                         onDismissShowQuickSelectFtue={handleDismissShowQuickSelectFtue}
                         stateRef={dialogStateRef}
+                        openCardSelectDialogActionRef={openCardSelectDialogActionRef}
+                        initialCardSelectDialogOpen={initialCardSelectDialogOpen}
                         mp3Encoder={mp3Encoder}
                         lastSelectedExportMode={settings.lastSelectedAnkiExportMode}
                         inTutorial={inTutorial}

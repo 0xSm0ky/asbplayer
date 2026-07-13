@@ -6,10 +6,22 @@ import Radio from '@mui/material/Radio';
 import RadioGroup from '@mui/material/RadioGroup';
 import Switch from '@mui/material/Switch';
 import Stack from '@mui/material/Stack';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import FormGroup from '@mui/material/FormGroup';
+import Checkbox from '@mui/material/Checkbox';
 import SettingsTextField from './SettingsTextField';
 import SwitchLabelWithHoverEffect from './SwitchLabelWithHoverEffect';
 import LabelWithHoverEffect from './LabelWithHoverEffect';
-import { AsbplayerSettings, exportSettings, PauseOnHoverMode, validateSettings } from '../settings';
+import {
+    AsbplayerSettings,
+    exportSettings,
+    isTrackAutoCopyable,
+    isTrackSeekable,
+    PauseOnHoverMode,
+    updateAutoCopyableTracksValue,
+    updateSeekableTracksValue,
+    validateSettings,
+} from '../settings';
 import { useTranslation } from 'react-i18next';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SubtitleHtml } from '..';
@@ -18,12 +30,13 @@ import InputAdornment from '@mui/material/InputAdornment';
 import IconButton from '@mui/material/IconButton';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SettingsSection from './SettingsSection';
+import { VideoSubtitleSplitBehavior } from '../settings';
 
 function regexIsValid(regex: string) {
     try {
         new RegExp(regex.trim());
         return true;
-    } catch (e) {
+    } catch {
         return false;
     }
 }
@@ -36,6 +49,8 @@ interface Props {
     insideApp?: boolean;
     extensionInstalled?: boolean;
     extensionSupportsPauseOnHover?: boolean;
+    extensionSupportsSeekableTrackSetting?: boolean;
+    extensionSupportsAutoCopyableTrackSetting?: boolean;
 }
 
 const MiscSettingTab: React.FC<Props> = ({
@@ -46,13 +61,18 @@ const MiscSettingTab: React.FC<Props> = ({
     insideApp,
     extensionInstalled,
     extensionSupportsPauseOnHover,
+    extensionSupportsSeekableTrackSetting,
+    extensionSupportsAutoCopyableTrackSetting,
 }) => {
     const { t } = useTranslation();
     const {
         themeType,
+        videoSubtitleSplitBehavior,
         language,
         rememberSubtitleOffset,
         autoCopyCurrentSubtitle,
+        seekableTracks,
+        autoCopyableTracks,
         miningHistoryStorageLimit,
         subtitleRegexFilter,
         tabName,
@@ -63,6 +83,8 @@ const MiscSettingTab: React.FC<Props> = ({
         pauseOnHoverMode,
         webSocketClientEnabled,
         webSocketServerUrl,
+        subtitleAboveThumbnail,
+        thumbnailPreview,
     } = settings;
     const validRegex = useMemo(() => regexIsValid(subtitleRegexFilter), [subtitleRegexFilter]);
     const [webSocketConnectionSucceeded, setWebSocketConnectionSucceeded] = useState<boolean>();
@@ -130,7 +152,9 @@ const MiscSettingTab: React.FC<Props> = ({
                                 <Radio
                                     checked={themeType === 'light'}
                                     value="light"
-                                    onChange={(event) => event.target.checked && onSettingChanged('themeType', 'light')}
+                                    onChange={(event) =>
+                                        event.target.checked && void onSettingChanged('themeType', 'light')
+                                    }
                                 />
                             }
                             label={t('settings.themeLight')}
@@ -140,7 +164,9 @@ const MiscSettingTab: React.FC<Props> = ({
                                 <Radio
                                     checked={themeType === 'dark'}
                                     value="dark"
-                                    onChange={(event) => event.target.checked && onSettingChanged('themeType', 'dark')}
+                                    onChange={(event) =>
+                                        event.target.checked && void onSettingChanged('themeType', 'dark')
+                                    }
                                 />
                             }
                             label={t('settings.themeDark')}
@@ -160,6 +186,23 @@ const MiscSettingTab: React.FC<Props> = ({
                         </MenuItem>
                     ))}
                 </SettingsTextField>
+                <SwitchLabelWithHoverEffect
+                    control={
+                        <Switch
+                            checked={videoSubtitleSplitBehavior === VideoSubtitleSplitBehavior.autoMaximizeVideo}
+                            onChange={(event) =>
+                                onSettingChanged(
+                                    'videoSubtitleSplitBehavior',
+                                    event.target.checked
+                                        ? VideoSubtitleSplitBehavior.autoMaximizeVideo
+                                        : VideoSubtitleSplitBehavior.rememberSplitPosition
+                                )
+                            }
+                        />
+                    }
+                    label={t('videoSubtitleSplitBehavior.autoMaximizeVideo')}
+                    labelPlacement="start"
+                />
                 <SettingsSection>{t('settings.subtitles')}</SettingsSection>
                 <SwitchLabelWithHoverEffect
                     control={
@@ -181,6 +224,91 @@ const MiscSettingTab: React.FC<Props> = ({
                     label={t('settings.autoCopy')}
                     labelPlacement="start"
                 />
+                {(!extensionInstalled || extensionSupportsAutoCopyableTrackSetting) && (
+                    <FormControl>
+                        <FormLabel component="legend">{t('settings.autoCopyableTracks')}</FormLabel>
+                        <FormGroup>
+                            {[0, 1, 2].map((trackIndex) => {
+                                return (
+                                    <FormControlLabel
+                                        key={trackIndex}
+                                        control={
+                                            <Checkbox
+                                                checked={isTrackAutoCopyable(autoCopyableTracks, trackIndex)}
+                                                onChange={(event) => {
+                                                    void onSettingChanged(
+                                                        'autoCopyableTracks',
+                                                        updateAutoCopyableTracksValue(
+                                                            autoCopyableTracks,
+                                                            trackIndex,
+                                                            event.target.checked
+                                                        )
+                                                    );
+                                                }}
+                                            />
+                                        }
+                                        label={t('settings.subtitleTrackChoice', { trackNumber: trackIndex + 1 })}
+                                    />
+                                );
+                            })}
+                        </FormGroup>
+                    </FormControl>
+                )}
+                {(!extensionInstalled || extensionSupportsSeekableTrackSetting) && (
+                    <FormControl>
+                        <FormLabel component="legend">{t('settings.seekableTracks')}</FormLabel>
+                        <FormGroup>
+                            {[0, 1, 2].map((trackIndex) => {
+                                return (
+                                    <FormControlLabel
+                                        key={trackIndex}
+                                        control={
+                                            <Checkbox
+                                                checked={isTrackSeekable(seekableTracks, trackIndex)}
+                                                onChange={(event) => {
+                                                    void onSettingChanged(
+                                                        'seekableTracks',
+                                                        updateSeekableTracksValue(
+                                                            seekableTracks,
+                                                            trackIndex,
+                                                            event.target.checked
+                                                        )
+                                                    );
+                                                }}
+                                            />
+                                        }
+                                        label={t('settings.subtitleTrackChoice', { trackNumber: trackIndex + 1 })}
+                                    />
+                                );
+                            })}
+                        </FormGroup>
+                    </FormControl>
+                )}
+                {insideApp && (
+                    <>
+                        <SwitchLabelWithHoverEffect
+                            control={
+                                <Switch
+                                    checked={thumbnailPreview}
+                                    onChange={() => onSettingChanged('thumbnailPreview', !thumbnailPreview)}
+                                />
+                            }
+                            label={t('settings.thumbnailPreview')}
+                            labelPlacement="start"
+                        />
+                        <SwitchLabelWithHoverEffect
+                            control={
+                                <Switch
+                                    checked={subtitleAboveThumbnail}
+                                    onChange={() => onSettingChanged('subtitleAboveThumbnail', !subtitleAboveThumbnail)}
+                                    disabled={!thumbnailPreview}
+                                />
+                            }
+                            label={t('settings.subtitleAboveThumbnail')}
+                            labelPlacement="start"
+                        />
+                    </>
+                )}
                 <SettingsTextField
                     label={t('settings.subtitleRegexFilter')}
                     fullWidth
@@ -206,7 +334,8 @@ const MiscSettingTab: React.FC<Props> = ({
                                     checked={subtitleHtml === SubtitleHtml.remove}
                                     value={SubtitleHtml.remove}
                                     onChange={(event) =>
-                                        event.target.checked && onSettingChanged('subtitleHtml', SubtitleHtml.remove)
+                                        event.target.checked &&
+                                        void onSettingChanged('subtitleHtml', SubtitleHtml.remove)
                                     }
                                 />
                             }
@@ -218,7 +347,8 @@ const MiscSettingTab: React.FC<Props> = ({
                                     checked={subtitleHtml === SubtitleHtml.render}
                                     value={SubtitleHtml.render}
                                     onChange={(event) =>
-                                        event.target.checked && onSettingChanged('subtitleHtml', SubtitleHtml.render)
+                                        event.target.checked &&
+                                        void onSettingChanged('subtitleHtml', SubtitleHtml.render)
                                     }
                                 />
                             }
@@ -257,7 +387,7 @@ const MiscSettingTab: React.FC<Props> = ({
                                         value={PauseOnHoverMode.disabled}
                                         onChange={(event) =>
                                             event.target.checked &&
-                                            onSettingChanged('pauseOnHoverMode', PauseOnHoverMode.disabled)
+                                            void onSettingChanged('pauseOnHoverMode', PauseOnHoverMode.disabled)
                                         }
                                     />
                                 }
@@ -270,7 +400,7 @@ const MiscSettingTab: React.FC<Props> = ({
                                         value={PauseOnHoverMode.inAndOut}
                                         onChange={(event) =>
                                             event.target.checked &&
-                                            onSettingChanged('pauseOnHoverMode', PauseOnHoverMode.inAndOut)
+                                            void onSettingChanged('pauseOnHoverMode', PauseOnHoverMode.inAndOut)
                                         }
                                     />
                                 }
@@ -283,7 +413,7 @@ const MiscSettingTab: React.FC<Props> = ({
                                         value={PauseOnHoverMode.inNotOut}
                                         onChange={(event) =>
                                             event.target.checked &&
-                                            onSettingChanged('pauseOnHoverMode', PauseOnHoverMode.inNotOut)
+                                            void onSettingChanged('pauseOnHoverMode', PauseOnHoverMode.inNotOut)
                                         }
                                     />
                                 }

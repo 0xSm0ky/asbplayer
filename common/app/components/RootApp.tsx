@@ -14,6 +14,7 @@ interface Props {
     fetcher: Fetcher;
     dictionaryStorage: DictionaryStorage;
     settingsStorage: AppSettingsStorage;
+    settingsProvider: SettingsProvider;
     globalStateProvider: GlobalStateProvider;
     extension: ChromeExtension;
 }
@@ -24,16 +25,16 @@ const RootApp = ({
     logoUrl,
     dictionaryStorage,
     settingsStorage,
+    settingsProvider,
     globalStateProvider,
     fetcher,
 }: Props) => {
     const dictionaryProvider = useMemo(() => new DictionaryProvider(dictionaryStorage), [dictionaryStorage]);
-    const settingsProvider = useMemo(() => new SettingsProvider(settingsStorage), [settingsStorage]);
     const [settings, setSettings] = useState<AsbplayerSettings>();
     const [globalState, setGlobalState] = useState<GlobalState>();
 
     useEffect(() => {
-        settingsProvider.getAll().then(setSettings);
+        void settingsProvider.getAll().then(setSettings);
     }, [settingsProvider]);
 
     const handleSettingsChanged = useCallback(
@@ -46,7 +47,7 @@ const RootApp = ({
     );
 
     const handleProfileChanged = useCallback(() => {
-        settingsProvider.getAll().then(setSettings);
+        void settingsProvider.getAll().then(setSettings);
     }, [settingsProvider]);
     const { refreshProfileContext, ...profilesContext } = useSettingsProfileContext({
         dictionaryProvider,
@@ -56,13 +57,13 @@ const RootApp = ({
 
     useEffect(() => {
         return settingsStorage.onSettingsUpdated(() => {
-            settingsProvider.getAll().then(setSettings);
+            void settingsProvider.getAll().then(setSettings);
             refreshProfileContext();
         });
     }, [extension, settingsProvider, settingsStorage, refreshProfileContext]);
 
     useEffect(() => {
-        globalStateProvider.getAll().then(setGlobalState);
+        void globalStateProvider.getAll().then(setGlobalState);
     }, [globalStateProvider]);
 
     const handleGlobalStateChanged = useCallback(
@@ -74,7 +75,7 @@ const RootApp = ({
 
                 return { ...s, ...state };
             });
-            globalStateProvider.set(state);
+            void globalStateProvider.set(state);
         },
         [globalStateProvider]
     );

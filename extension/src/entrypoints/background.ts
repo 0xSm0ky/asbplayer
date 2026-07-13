@@ -54,7 +54,7 @@ import { bindWebSocketClient, unbindWebSocketClient } from '@/services/web-socke
 import { isFirefoxBuild } from '@/services/build-flags';
 import { CaptureStreamAudioRecorder, OffscreenAudioRecorder } from '@/services/audio-recorder-delegate';
 import RequestModelHandler from '@/handlers/mobile-overlay/request-model-handler';
-import CurrentTabHandler from '@/handlers/mobile-overlay/current-tab-handler';
+import CurrentTabHandler from '@/handlers/current-tab-handler';
 import UpdateMobileOverlayModelHandler from '@/handlers/video/update-mobile-overlay-model-handler';
 import { isMobile } from '@project/common/device-detection/mobile';
 import { enqueueUpdateAlert } from '@/services/update-alert';
@@ -73,33 +73,37 @@ import SaveTokenLocalHandler from '@/handlers/asbplayerv2/save-token-local-handl
 import { ExtensionGlobalStateProvider } from '@/services/extension-global-state-provider';
 import { lt as semverLt } from 'semver';
 import { AnnotationTutorialState } from '@project/common/global-state';
+import BrowserFeaturesHandler from '@/handlers/asbplayerv2/browser-features-handler';
+import OpenStatisticsHandler from '@/handlers/video/open-statistics-handler';
+import StatisticsOverlayForwarderHandler from '@/handlers/statistics-overlay/statistics-overlay-forwarder-handler';
+import OpenStatisticsOverlayHandler from '@/handlers/open-statistics-overlay-handler';
 
 export default defineBackground(() => {
     if (!isFirefoxBuild) {
-        browser.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
+        void browser.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_AND_UNTRUSTED_CONTEXTS' });
     }
 
     const settings = new SettingsProvider(new ExtensionSettingsStorage());
 
     const startListener = async () => {
-        primeLocalization(await settings.getSingle('language'));
+        await primeLocalization(await settings.getSingle('language'));
     };
 
     const globalStateProvider = new ExtensionGlobalStateProvider();
 
     const updateBadgeForAnnotationTutorial = () => {
-        browser.action.setBadgeText({ text: '!' });
+        void browser.action.setBadgeText({ text: '!' });
         browser.storage.local.onChanged.addListener((changes) => {
             // Hide the "!" badge when the user views the annotation tutorial
             for (const [key, { newValue }] of Object.entries(changes)) {
                 if (key === 'ftueAnnotation' && newValue !== AnnotationTutorialState.shouldSee) {
-                    browser.action.setBadgeText({ text: '' });
+                    void browser.action.setBadgeText({ text: '' });
                 }
             }
         });
     };
 
-    globalStateProvider.get(['ftueAnnotation']).then((s) => {
+    void globalStateProvider.get(['ftueAnnotation']).then((s) => {
         if (s.ftueAnnotation === AnnotationTutorialState.shouldSee) {
             updateBadgeForAnnotationTutorial();
         }
@@ -107,7 +111,7 @@ export default defineBackground(() => {
 
     const installListener = async (details: Browser.runtime.InstalledDetails) => {
         if (details.reason === browser.runtime.OnInstalledReason.UPDATE) {
-            primeLocalization(await settings.getSingle('language'));
+            await primeLocalization(await settings.getSingle('language'));
 
             // Existing users who upgrade to 1.14.0 should see the annotation tutorial
             if (details.previousVersion !== undefined && semverLt(details.previousVersion, '1.14.0')) {
@@ -142,7 +146,7 @@ export default defineBackground(() => {
                 });
             }
 
-            browser.tabs.create({ url: browser.runtime.getURL('/ftue-ui.html'), active: true });
+            void browser.tabs.create({ url: browser.runtime.getURL('/ftue-ui.html'), active: true });
         }
     };
 
@@ -151,12 +155,12 @@ export default defineBackground(() => {
             return;
         }
 
-        enqueueUpdateAlert();
+        void enqueueUpdateAlert();
     };
 
-    browser.runtime.onInstalled.addListener(installListener);
-    browser.runtime.onInstalled.addListener(updateListener);
-    browser.runtime.onStartup.addListener(startListener);
+    browser.runtime.onInstalled.addListener((details) => void installListener(details));
+    browser.runtime.onInstalled.addListener((details) => void updateListener(details));
+    browser.runtime.onStartup.addListener(() => void startListener());
 
     const tabRegistry = new TabRegistry(settings);
     const audioRecorder = new AudioRecorderService(
@@ -165,7 +169,7 @@ export default defineBackground(() => {
     );
     const imageCapturer = new ImageCapturer(settings);
     const cardPublisher = new CardPublisher(settings);
-    const dictionaryDB = new DictionaryDB();
+    const dictionaryDB = new DictionaryDB(settings);
 
     const handlers: CommandHandler[] = [
         new VideoHeartbeatHandler(tabRegistry),
@@ -178,10 +182,12 @@ export default defineBackground(() => {
         new SyncHandler(tabRegistry),
         new HttpPostHandler(),
         new ToggleSidePanelHandler(tabRegistry),
+        new OpenStatisticsHandler(tabRegistry),
+        new OpenStatisticsOverlayHandler(tabRegistry),
         new OpenAsbplayerSettingsHandler(),
         new CopyToClipboardHandler(),
         new EncodeMp3Handler(),
-        new DictionaryHandler(dictionaryDB),
+        new DictionaryHandler(dictionaryDB, tabRegistry),
         new VideoDisappearedHandler(tabRegistry),
         new RequestingActiveTabPermissionHandler(),
         new CopySubtitleHandler(tabRegistry),
@@ -210,11 +216,13 @@ export default defineBackground(() => {
         new OpenExtensionShortcutsHandler(),
         new ExtensionCommandsHandler(),
         new PageConfigHandler(),
+        new BrowserFeaturesHandler(),
         new AsbplayerV2ToVideoCommandForwardingHandler(),
         new CaptureVisibleTabHandler(),
         new RequestModelHandler(),
         new CurrentTabHandler(),
         new MobileOverlayForwarderHandler(),
+        new StatisticsOverlayForwarderHandler(),
     ];
 
     browser.runtime.onMessage.addListener((request: Command<Message>, sender, sendResponse) => {
@@ -256,7 +264,7 @@ export default defineBackground(() => {
                     command: 'toggle-video-select',
                 },
             };
-            tabRegistry.publishCommandToVideoElementTabs((tab): ExtensionToVideoCommand<Message> | undefined => {
+            void tabRegistry.publishCommandToVideoElementTabs((tab): ExtensionToVideoCommand<Message> | undefined => {
                 if (info.pageUrl !== tab.url) {
                     return undefined;
                 }
@@ -264,25 +272,27 @@ export default defineBackground(() => {
                 return toggleVideoSelectCommand;
             });
         } else if (info.menuItemId === 'mine-subtitle') {
-            tabRegistry.publishCommandToVideoElements((videoElement): ExtensionToVideoCommand<Message> | undefined => {
-                if (info.srcUrl !== undefined && videoElement.src !== info.srcUrl) {
-                    return undefined;
-                }
+            void tabRegistry.publishCommandToVideoElements(
+                (videoElement): ExtensionToVideoCommand<Message> | undefined => {
+                    if (info.srcUrl !== undefined && videoElement.src !== info.srcUrl) {
+                        return undefined;
+                    }
 
-                if (info.srcUrl === undefined && info.pageUrl !== videoElement.tab.url) {
-                    return undefined;
-                }
+                    if (info.srcUrl === undefined && info.pageUrl !== videoElement.tab.url) {
+                        return undefined;
+                    }
 
-                const copySubtitleCommand: ExtensionToVideoCommand<CopySubtitleMessage> = {
-                    sender: 'asbplayer-extension-to-video',
-                    message: {
-                        command: 'copy-subtitle',
-                        postMineAction: PostMineAction.showAnkiDialog,
-                    },
-                    src: videoElement.src,
-                };
-                return copySubtitleCommand;
-            });
+                    const copySubtitleCommand: ExtensionToVideoCommand<CopySubtitleMessage> = {
+                        sender: 'asbplayer-extension-to-video',
+                        message: {
+                            command: 'copy-subtitle',
+                            postMineAction: PostMineAction.showAnkiDialog,
+                        },
+                        src: videoElement.src,
+                    };
+                    return copySubtitleCommand;
+                }
+            );
         }
     });
 
@@ -305,10 +315,11 @@ export default defineBackground(() => {
             switch (command) {
                 case 'copy-subtitle':
                 case 'update-last-card':
+                case 'update-selected-card':
                 case 'export-card':
-                case 'copy-subtitle-with-dialog':
+                case 'copy-subtitle-with-dialog': {
                     const postMineAction = postMineActionFromCommand(command);
-                    tabRegistry.publishCommandToVideoElements((videoElement) => {
+                    void tabRegistry.publishCommandToVideoElements((videoElement) => {
                         if (tabs.find((t) => t.id === videoElement.tab.id) === undefined) {
                             return undefined;
                         }
@@ -324,7 +335,7 @@ export default defineBackground(() => {
                         return extensionToVideoCommand;
                     });
 
-                    tabRegistry.publishCommandToAsbplayers({
+                    void tabRegistry.publishCommandToAsbplayers({
                         commandFactory: (asbplayer) => {
                             if (!validAsbplayer(asbplayer)) {
                                 return undefined;
@@ -342,6 +353,7 @@ export default defineBackground(() => {
                         },
                     });
                     break;
+                }
                 case 'toggle-video-select':
                     for (const tab of tabs) {
                         if (typeof tab.id !== 'undefined') {
@@ -351,12 +363,12 @@ export default defineBackground(() => {
                                     command: 'toggle-video-select',
                                 },
                             };
-                            browser.tabs.sendMessage(tab.id, extensionToVideoCommand);
+                            void browser.tabs.sendMessage(tab.id, extensionToVideoCommand);
                         }
                     }
                     break;
                 case 'take-screenshot':
-                    tabRegistry.publishCommandToVideoElements((videoElement) => {
+                    void tabRegistry.publishCommandToVideoElements((videoElement) => {
                         if (tabs.find((t) => t.id === videoElement.tab.id) === undefined) {
                             return undefined;
                         }
@@ -371,7 +383,7 @@ export default defineBackground(() => {
                         return extensionToVideoCommand;
                     });
 
-                    tabRegistry.publishCommandToAsbplayers({
+                    void tabRegistry.publishCommandToAsbplayers({
                         commandFactory: (asbplayer) => {
                             if (!validAsbplayer(asbplayer)) {
                                 return undefined;
@@ -389,7 +401,7 @@ export default defineBackground(() => {
                     });
                     break;
                 case 'toggle-recording':
-                    tabRegistry.publishCommandToVideoElements((videoElement) => {
+                    void tabRegistry.publishCommandToVideoElements((videoElement) => {
                         if (tabs.find((t) => t.id === videoElement.tab.id) === undefined) {
                             return undefined;
                         }
@@ -403,7 +415,7 @@ export default defineBackground(() => {
                         };
                         return extensionToVideoCommand;
                     });
-                    tabRegistry.publishCommandToAsbplayers({
+                    void tabRegistry.publishCommandToAsbplayers({
                         commandFactory: (asbplayer) => {
                             if (!validAsbplayer(asbplayer)) {
                                 return undefined;
@@ -434,6 +446,8 @@ export default defineBackground(() => {
                 return PostMineAction.showAnkiDialog;
             case 'update-last-card':
                 return PostMineAction.updateLastCard;
+            case 'update-selected-card':
+                return PostMineAction.showUpdateCardDialog;
             case 'export-card':
                 return PostMineAction.exportCard;
             default:
@@ -442,9 +456,9 @@ export default defineBackground(() => {
     }
 
     const updateWebSocketClientState = () => {
-        settings.getSingle('webSocketClientEnabled').then((webSocketClientEnabled) => {
+        void settings.getSingle('webSocketClientEnabled').then((webSocketClientEnabled) => {
             if (webSocketClientEnabled) {
-                bindWebSocketClient(settings, tabRegistry);
+                void bindWebSocketClient(settings, tabRegistry);
             } else {
                 unbindWebSocketClient();
             }
@@ -454,6 +468,12 @@ export default defineBackground(() => {
     updateWebSocketClientState();
     tabRegistry.onAsbplayerInstance(updateWebSocketClientState);
     tabRegistry.onSyncedElement(updateWebSocketClientState);
+    browser.runtime.onConnect.addListener((port) => {
+        const asbplayerId = /asbplayer-side-panel-(.+)/.exec(port.name)?.[1];
+        if (asbplayerId) {
+            port.onDisconnect.addListener(() => void tabRegistry.onAsbplayerRemoved(asbplayerId));
+        }
+    });
 
     const action = browser.action || browser.browserAction;
 
@@ -466,10 +486,10 @@ export default defineBackground(() => {
                         command: 'toggle-video-select',
                     },
                 };
-                browser.tabs.sendMessage(tab.id, extensionToVideoCommand);
+                void browser.tabs.sendMessage(tab.id, extensionToVideoCommand);
             }
         } else {
-            action.openPopup();
+            void action.openPopup();
         }
     };
 
@@ -480,31 +500,33 @@ export default defineBackground(() => {
             hasHostPermission = result;
 
             if (hasHostPermission && !isMobile) {
-                action.setPopup({
+                void action.setPopup({
                     popup: 'popup-ui.html',
                 });
             }
         });
 
-        action.onClicked.addListener(async (tab) => {
-            if (hasHostPermission) {
-                defaultAction(tab);
-            } else {
-                try {
-                    const obtainedHostPermission = await browser.permissions.request({ origins: ['<all_urls>'] });
+        action.onClicked.addListener((tab) => {
+            void (async () => {
+                if (hasHostPermission) {
+                    defaultAction(tab);
+                } else {
+                    try {
+                        const obtainedHostPermission = await browser.permissions.request({ origins: ['<all_urls>'] });
 
-                    if (obtainedHostPermission) {
-                        hasHostPermission = true;
-                        browser.runtime.reload();
+                        if (obtainedHostPermission) {
+                            hasHostPermission = true;
+                            browser.runtime.reload();
+                        }
+                    } catch (e) {
+                        console.error(e);
                     }
-                } catch (e) {
-                    console.error(e);
                 }
-            }
+            })().catch(console.error);
         });
     } else {
         if (!isMobile) {
-            action.setPopup({
+            void action.setPopup({
                 popup: 'popup-ui.html',
             });
         }
@@ -528,8 +550,7 @@ export default defineBackground(() => {
 
                 for (const header of responseHeaders) {
                     if (header.name.toLowerCase() === 'content-security-policy') {
-                        let cspValue = header.value;
-                        cspValue += ` ; script-src moz-extension://${browser.runtime.id}`;
+                        header.value += ` ; script-src moz-extension://${browser.runtime.id}`;
                     }
                 }
 

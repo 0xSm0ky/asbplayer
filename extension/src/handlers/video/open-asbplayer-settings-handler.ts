@@ -9,13 +9,19 @@ export default class OpenAsbplayerSettingsHandler {
         return 'open-asbplayer-settings';
     }
 
-    async handle(command: Command<Message>, sender: Browser.runtime.MessageSender) {
-        const tutorial = (command.message as OpenAsbplayerSettingsMessage).tutorial;
+    async handle(command: Command<Message>) {
+        const { tutorial, scrollToId } = command.message as OpenAsbplayerSettingsMessage;
+        const hash = scrollToId ? `#${scrollToId}` : '';
 
         if (tutorial) {
-            browser.tabs.create({ active: true, url: browser.runtime.getURL('/options.html?tutorial=true') });
+            void browser.tabs.create({
+                active: true,
+                url: browser.runtime.getURL(`/options.html?tutorial=true${hash}`),
+            });
+        } else if (scrollToId) {
+            void browser.tabs.create({ active: true, url: browser.runtime.getURL(`/options.html${hash}`) });
         } else {
-            browser.runtime.openOptionsPage();
+            void browser.runtime.openOptionsPage();
         }
     }
 }

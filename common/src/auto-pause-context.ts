@@ -4,17 +4,19 @@ export default class AutoPauseContext {
     private lastStartedShowing?: SubtitleModel;
     private lastWillStopShowing?: SubtitleModel;
 
-    onStartedShowing?: () => void;
-    onWillStopShowing?: (subtitle: SubtitleModel) => void;
+    onStartedShowing?: (subtitle: SubtitleModel) => void;
+    onWillStopShowing?: (subtitle: SubtitleModel) => Promise<void>;
     onNextToShow?: (subtitle: SubtitleModel) => void;
 
-    willStopShowing(subtitle: SubtitleModel) {
+    async willStopShowing(subtitle: SubtitleModel): Promise<void> {
         if (subtitle.end === this.lastWillStopShowing?.end) {
             return;
         }
 
-        this.onWillStopShowing?.(subtitle);
         this.lastWillStopShowing = subtitle;
+        if (this.onWillStopShowing !== undefined) {
+            await this.onWillStopShowing(subtitle);
+        }
     }
 
     startedShowing(subtitle: SubtitleModel) {
@@ -22,7 +24,7 @@ export default class AutoPauseContext {
             return;
         }
 
-        this.onStartedShowing?.();
+        this.onStartedShowing?.(subtitle);
         this.lastStartedShowing = subtitle;
     }
 

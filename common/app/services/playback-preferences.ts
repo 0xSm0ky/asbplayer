@@ -7,6 +7,7 @@ const theaterModeKey = 'theaterMode';
 const offsetKey = 'offset';
 const displaySubtitlesKey = 'displaySubtitles';
 const hideSubtitleListKey = 'hideSubtitleList';
+const subtitlePlayerWidthKey = 'subtitlePlayerWidth';
 const defaultVolume = 100;
 
 interface PlaybackPrefSettings {
@@ -77,7 +78,7 @@ export default class PlaybackPreferences {
 
     set offset(offset: number) {
         if (this._extension.supportsAppIntegration) {
-            this._extension.setSettings({ lastSubtitleOffset: offset });
+            void this._extension.setSettings({ lastSubtitleOffset: offset });
         } else {
             this._storage.set(offsetKey, String(offset));
         }
@@ -95,5 +96,19 @@ export default class PlaybackPreferences {
 
     set displaySubtitles(displaySubtitles: boolean) {
         this._storage.set(displaySubtitlesKey, String(displaySubtitles));
+    }
+
+    get subtitlePlayerWidth(): number | undefined {
+        const value = this._storage.get(subtitlePlayerWidthKey);
+
+        if (value === null) {
+            return undefined;
+        }
+
+        return Number(value);
+    }
+
+    set subtitlePlayerWidth(width: number) {
+        this._storage.set(subtitlePlayerWidthKey, String(width));
     }
 }

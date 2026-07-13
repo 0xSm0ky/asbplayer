@@ -1,7 +1,7 @@
-import React, { MutableRefObject, useCallback, useState, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useMemo, useRef, RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import makeStyles from '@mui/styles/makeStyles';
-import { Image, SubtitleModel, CardModel, AnkiExportMode } from '@project/common';
+import { MediaFragment, SubtitleModel, CardModel, AnkiExportMode } from '@project/common';
 import { AnkiSettings, Profile, sortedAnkiFieldModels } from '@project/common/settings';
 import {
     humanReadableTime,
@@ -22,6 +22,7 @@ import IconButton from '@mui/material/IconButton';
 import RestoreIcon from '@mui/icons-material/Restore';
 import SettingsIcon from '@mui/icons-material/Settings';
 import CloseIcon from '@mui/icons-material/Close';
+import SearchIcon from '@mui/icons-material/Search';
 import Slider from '@mui/material/Slider';
 import Toolbar from '@mui/material/Toolbar';
 import Tooltip from './Tooltip';
@@ -46,6 +47,7 @@ import AnkiDialogButton from './AnkiDialogButton';
 import { type Theme } from '@mui/material';
 import TutorialBubble from './TutorialBubble';
 import AnkiDialogTutorialBubble from './AnkiDialogTutorialBubble';
+import CardSelectView from './CardSelectView';
 
 const quickSelectShortcut = isMacOs ? '⌘+⇧+Enter' : 'Alt+Shift+Enter';
 
@@ -84,9 +86,6 @@ const boundaryIntervalSubtitleCountRadius = 1;
 const boundaryIntervalSubtitleTimeRadius = 5000;
 
 const boundaryIntervalFromCard = (subtitle: SubtitleModel, theSurroundingSubtitles: SubtitleModel[]) => {
-    let index = theSurroundingSubtitles.findIndex((s) => s.start === subtitle.start);
-    index = index === -1 ? theSurroundingSubtitles.length / 2 : index;
-
     const { surroundingSubtitles: subtitlesToDisplay } = surroundingSubtitlesAroundInterval(
         theSurroundingSubtitles,
         subtitle.start,
@@ -134,7 +133,7 @@ const sliderMarksFromCard = (surroundingSubtitles: SubtitleModel[], boundary: nu
             };
         })
         .filter((mark: Mark | null) => mark !== null)
-        .filter((mark: Mark | null) => mark!.value >= boundary[0] && mark!.value <= boundary[1]) as Mark[];
+        .filter((mark: Mark | null) => mark!.value >= boundary[0] && mark!.value <= boundary[1]);
 };
 
 const sliderValueLabelFormat = (ms: number) => {
@@ -185,7 +184,7 @@ interface AnkiDialogProps {
     open: boolean;
     disabled: boolean;
     card: CardModel;
-    onProceed: (params: ExportParams) => void;
+    onProceed: (params: ExportParams) => Promise<void>;
     onRerecord?: () => void;
     onCancel: () => void;
     onOpenSettings?: () => void;
@@ -198,7 +197,9 @@ interface AnkiDialogProps {
     timestampInterval?: number[];
     lastAppliedTimestampIntervalToText?: number[];
     lastAppliedTimestampIntervalToAudio?: number[];
-    stateRef?: MutableRefObject<AnkiDialogState | undefined>;
+    stateRef?: RefObject<AnkiDialogState | undefined>;
+    initialCardSelectDialogOpen?: boolean;
+    openCardSelectDialogActionRef?: RefObject<(() => void) | undefined>;
     mp3Encoder: (blob: Blob, extension: string) => Promise<Blob>;
     profiles?: Profile[];
     activeProfile?: string;
@@ -227,6 +228,8 @@ const AnkiDialog = ({
     lastAppliedTimestampIntervalToText: initialLastAppliedTimestampIntervalToText,
     lastAppliedTimestampIntervalToAudio: initialLastAppliedTimestampIntervalToAudio,
     stateRef,
+    initialCardSelectDialogOpen,
+    openCardSelectDialogActionRef,
     mp3Encoder,
     profiles,
     activeProfile,
@@ -259,13 +262,36 @@ const AnkiDialog = ({
     const [audioClip, setAudioClip] = useState<AudioClip>();
     const [ankiIsAvailable, setAnkiIsAvailable] = useState<boolean>(true);
     const [imageDialogOpen, setImageDialogOpen] = useState<boolean>(false);
-    const [image, setImage] = useState<Image>();
+    const [cardSelectDialogOpen, setCardSelectDialogOpen] = useState<boolean>(initialCardSelectDialogOpen ?? false);
+    const [selectedNoteIdsToUpdate, setSelectedNoteIdsToUpdate] = useState<number[]>();
+    const [image, setImage] = useState<MediaFragment>();
+    const [imageTimestampInterval, setImageTimestampInterval] = useState<number[]>();
     const dialogRef = useRef<HTMLDivElement>(undefined);
     const dialogRefCallback = useCallback((element: HTMLDivElement) => {
         dialogRef.current = element;
         setWidth(element?.getBoundingClientRect().width ?? 0);
     }, []);
     const { t } = useTranslation();
+
+    const buildExportParams = useCallback(
+        (mode: AnkiExportMode, noteId?: number): ExportParams => ({
+            text,
+            track1,
+            track2,
+            track3,
+            definition,
+            audioClip,
+            image,
+            word,
+            source,
+            url,
+            customFieldValues,
+            tags,
+            mode,
+            noteId,
+        }),
+        [text, track1, track2, track3, definition, audioClip, image, word, source, url, customFieldValues, tags]
+    );
 
     if (stateRef) {
         stateRef.current = {
@@ -444,8 +470,36 @@ const AnkiDialog = ({
             return;
         }
 
-        setImage(Image.fromCard(card, settings.maxImageWidth, settings.maxImageHeight));
-    }, [card, open, settings.maxImageWidth, settings.maxImageHeight]);
+        setImage((previousImage) => {
+            previousImage?.dispose();
+            const image = MediaFragment.fromCard(
+                card,
+                settings.maxImageWidth,
+                settings.maxImageHeight,
+                settings.mediaFragmentFormat,
+                settings.mediaFragmentTrimStart,
+                settings.mediaFragmentTrimEnd,
+                settings.mediaFragmentMaxClipLength
+            );
+
+            setImageTimestampInterval(
+                image?.extension === 'webm' && image.endTimestamp !== undefined
+                    ? [image.timestamp, image.endTimestamp]
+                    : undefined
+            );
+
+            return image;
+        });
+    }, [
+        card,
+        open,
+        settings.maxImageWidth,
+        settings.maxImageHeight,
+        settings.mediaFragmentFormat,
+        settings.mediaFragmentTrimStart,
+        settings.mediaFragmentTrimEnd,
+        settings.mediaFragmentMaxClipLength,
+    ]);
 
     useEffect(() => {
         if (!open && image) {
@@ -478,6 +532,30 @@ const AnkiDialog = ({
             return image.atTimestamp(timestamp);
         });
     }, []);
+
+    const handleImageTimestampIntervalChange = useCallback(
+        (newTimestampInterval: number[]) => {
+            const file = card.file;
+
+            if (settings.mediaFragmentFormat !== 'webm' || !file) {
+                return;
+            }
+
+            setImageTimestampInterval(newTimestampInterval);
+
+            setImage((previousImage) => {
+                previousImage?.dispose();
+                return MediaFragment.fromWebmFile(
+                    file,
+                    newTimestampInterval[0],
+                    newTimestampInterval[1],
+                    settings.maxImageWidth,
+                    settings.maxImageHeight
+                );
+            });
+        },
+        [card.file, settings.maxImageWidth, settings.maxImageHeight, settings.mediaFragmentFormat]
+    );
 
     const applyTimestampIntervalToTrack = useCallback(
         (
@@ -605,6 +683,10 @@ const AnkiDialog = ({
                 return;
             }
 
+            if (image.extension === 'webm') {
+                return;
+            }
+
             onCopyToClipboard(await image.pngBlob());
         },
         [image, onCopyToClipboard]
@@ -639,6 +721,7 @@ const AnkiDialog = ({
         setLastAppliedTimestampIntervalToText(undefined);
     }, []);
 
+    const updateSpecificButtonRef = useRef<HTMLButtonElement | null>(null);
     const updateLastButtonRef = useRef<HTMLButtonElement | null>(null);
     const openInAnkiButtonRef = useRef<HTMLButtonElement | null>(null);
     const exportButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -681,42 +764,27 @@ const AnkiDialog = ({
     }, [open, disabled, focusOnPreferredAction]);
 
     const handleProceed = useCallback(
-        (mode: AnkiExportMode) => {
-            onProceed({
-                text,
-                track1,
-                track2,
-                track3,
-                definition,
-                audioClip,
-                image,
-                word,
-                source,
-                url,
-                customFieldValues,
-                tags,
-                mode,
-            });
+        async (mode: AnkiExportMode, noteIds?: number[]) => {
+            if (mode === 'updateSpecific') {
+                for (const noteId of noteIds ?? []) {
+                    await onProceed(buildExportParams(mode, noteId));
+                }
+            } else {
+                void onProceed(buildExportParams(mode));
+            }
         },
-        [
-            text,
-            track1,
-            track2,
-            track3,
-            definition,
-            audioClip,
-            image,
-            word,
-            source,
-            url,
-            customFieldValues,
-            tags,
-            onProceed,
-        ]
+        [buildExportParams, onProceed]
     );
 
     const handleOpenInAnki = useCallback(() => handleProceed('gui'), [handleProceed]);
     const handleUpdateLastCard = useCallback(() => handleProceed('updateLast'), [handleProceed]);
+    const handleUpdateSelectedCards = useCallback(
+        async (noteIds: number[]) => {
+            await handleProceed('updateSpecific', noteIds);
+            setCardSelectDialogOpen(false);
+        },
+        [handleProceed]
+    );
     const handleExport = useCallback(() => handleProceed('default'), [handleProceed]);
 
     useEffect(() => {
@@ -736,14 +804,21 @@ const AnkiDialog = ({
         return () => document.removeEventListener('keydown', listener);
     }, [focusOnPreferredAction]);
 
+    const openCardSelectDialog = useCallback(() => setCardSelectDialogOpen(true), []);
+
+    if (openCardSelectDialogActionRef) {
+        openCardSelectDialogActionRef.current = openCardSelectDialog;
+    }
+
     const [tutorialStep, setTutorialStep] = useState<TutorialStep>(TutorialStep.dialog);
+    const effectiveInTutorial = inTutorial && !cardSelectDialogOpen && !imageDialogOpen;
 
     return (
         <>
             <Dialog open={open} disableRestoreFocus disableEnforceFocus fullWidth maxWidth="sm" onClose={onCancel}>
                 <Toolbar>
                     <AnkiDialogTutorialBubble
-                        disabled={!inTutorial}
+                        disabled={!effectiveInTutorial}
                         onConfirm={() => setTutorialStep(TutorialStep.wordField)}
                         show={tutorialStep === TutorialStep.dialog}
                     >
@@ -761,9 +836,9 @@ const AnkiDialog = ({
                     {onOpenSettings && (
                         <TutorialBubble
                             placement="bottom"
-                            disabled={!inTutorial}
+                            disabled={!effectiveInTutorial}
                             show={tutorialStep === TutorialStep.configure}
-                            text={t('ftue.configureAnki')!}
+                            text={t('ftue.configureAnki')}
                             onConfirm={() => setTutorialStep(TutorialStep.export)}
                         >
                             <IconButton
@@ -798,7 +873,7 @@ const AnkiDialog = ({
                                     {!model.custom && model.key === 'sentence' && model.field.display && (
                                         <SentenceField
                                             text={text}
-                                            label={t('ankiDialog.sentence')!}
+                                            label={t('ankiDialog.sentence')}
                                             width={width}
                                             onChangeText={handleSentenceTextChange}
                                             selectedSubtitles={selectedSubtitles}
@@ -814,7 +889,7 @@ const AnkiDialog = ({
                                             text={word}
                                             onText={setWord}
                                             wordField={settings.wordField}
-                                            disableTutorial={!inTutorial}
+                                            disableTutorial={!effectiveInTutorial}
                                             showTutorial={tutorialStep === TutorialStep.wordField}
                                             onConfirmTutorial={() => setTutorialStep(TutorialStep.configure)}
                                         />
@@ -902,7 +977,7 @@ const AnkiDialog = ({
                             fullWidth
                             color="primary"
                             items={tags}
-                            onItemsChange={(newTags) => setTags(newTags)}
+                            onItemsChange={setTags}
                         />
                         {timestampInterval && timestampBoundaryInterval && timestampMarks && (
                             <Grid container direction="row">
@@ -922,7 +997,7 @@ const AnkiDialog = ({
                                     />
                                 </Grid>
                                 <Grid item>
-                                    <Tooltip title={t('ankiDialog.resetSlider')!}>
+                                    <Tooltip title={t('ankiDialog.resetSlider')}>
                                         <span>
                                             <IconButton
                                                 edge="end"
@@ -935,7 +1010,7 @@ const AnkiDialog = ({
                                     </Tooltip>
                                 </Grid>
                                 <Grid item>
-                                    <Tooltip title={t('ankiDialog.zoomIn')!}>
+                                    <Tooltip title={t('ankiDialog.zoomIn')}>
                                         <span>
                                             <IconButton
                                                 edge="end"
@@ -948,7 +1023,7 @@ const AnkiDialog = ({
                                     </Tooltip>
                                 </Grid>
                                 <Grid item>
-                                    <Tooltip title={t('ankiDialog.zoomOut')!}>
+                                    <Tooltip title={t('ankiDialog.zoomOut')}>
                                         <span>
                                             <IconButton
                                                 edge="end"
@@ -961,7 +1036,7 @@ const AnkiDialog = ({
                                     </Tooltip>
                                 </Grid>
                                 <Grid item>
-                                    <Tooltip title={t('ankiDialog.applySelection')!}>
+                                    <Tooltip title={t('ankiDialog.applySelection')}>
                                         <span>
                                             <IconButton
                                                 edge="end"
@@ -999,6 +1074,20 @@ const AnkiDialog = ({
                     )}
                 </DialogContent>
                 <DialogActions>
+                    <Tooltip title={t('cardSelectUi.title')}>
+                        <AnkiDialogButton
+                            ref={updateSpecificButtonRef}
+                            disabled={disabled}
+                            focusVisible={focusedAction === 'updateSpecific'}
+                            onBlurVisible={handleActionBlur}
+                            onClick={() => setCardSelectDialogOpen(true)}
+                            component={(props) => (
+                                <IconButton color="primary" size="small" {...props}>
+                                    <SearchIcon />
+                                </IconButton>
+                            )}
+                        />
+                    </Tooltip>
                     <AnkiDialogButton
                         ref={openInAnkiButtonRef}
                         disabled={disabled}
@@ -1032,8 +1121,20 @@ const AnkiDialog = ({
                 open={open && imageDialogOpen}
                 image={image}
                 interval={timestampBoundaryInterval}
+                timestampInterval={imageTimestampInterval}
                 onClose={handleCloseImageDialog}
                 onTimestampChange={handleImageTimestampChange}
+                onTimestampIntervalChange={handleImageTimestampIntervalChange}
+            />
+            <CardSelectView
+                open={cardSelectDialogOpen}
+                anki={anki}
+                ankiSettings={settings}
+                disabled={disabled}
+                selectedNoteIds={selectedNoteIdsToUpdate ?? []}
+                onSelect={setSelectedNoteIdsToUpdate}
+                onUpdate={handleUpdateSelectedCards}
+                onClose={() => setCardSelectDialogOpen(false)}
             />
         </>
     );

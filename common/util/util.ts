@@ -1,19 +1,31 @@
 import sanitize from 'sanitize-filename';
-import { Rgb, SubtitleModel, Tokenization, TokenReading } from '../src/model';
-import { TextSubtitleSettings } from '../settings/settings';
+import { Rgb, SubtitleModel, SubtitleTrack, Token, Tokenization, TokenReading } from '../src/model';
+import { TextSubtitleSettings, TokenStatus } from '../settings/settings';
 import { Progress } from '..';
+import { TokenStatusInfo } from '../dictionary-db';
+import { PitchAccentPosition } from '../yomitan';
 
-export function arrayEquals<T>(a: T[], b: T[], equals = (lhs: T, rhs: T) => lhs === rhs): boolean {
-    if (a.length !== b.length) {
-        return false;
-    }
+// Cues on the same track can share a start time (e.g. Netflix splitting one line into
+// multiple cues), and SubtitleCollection does not guarantee source order in that case, so
+// callers displaying subtitles should sort by track and fall back to source index for ties.
+export function compareSubtitlesForDisplay(
+    s1: Pick<SubtitleModel, 'track' | 'index'>,
+    s2: Pick<SubtitleModel, 'track' | 'index'>
+): number {
+    return s1.track - s2.track || (s1.index ?? 0) - (s2.index ?? 0);
+}
 
+export function arrayEquals<T>(
+    a: readonly T[] | undefined,
+    b: readonly T[] | undefined,
+    equals = (lhs: T, rhs: T) => lhs === rhs
+): boolean {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    if (a.length !== b.length) return false;
     for (let i = 0; i < a.length; ++i) {
-        if (!equals(a[i], b[i])) {
-            return false;
-        }
+        if (!equals(a[i], b[i])) return false;
     }
-
     return true;
 }
 
@@ -24,6 +36,13 @@ export const localizedDate = (timestamp: number) => {
         second: '2-digit',
     });
 };
+
+export const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export function utcStartOfToday(): Date {
+    const now = new Date();
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
 
 export function humanReadableTime(timestamp: number, nearestTenth = false, fullyPadded = false): string {
     const totalSeconds = Math.floor(timestamp / 1000);
@@ -57,6 +76,39 @@ export function humanReadableTime(timestamp: number, nearestTenth = false, fully
 
         return minutes + 'm' + String(seconds).padStart(2, '0') + 's';
     }
+}
+
+export function timeDurationDisplay(
+    milliseconds: number,
+    totalMilliseconds: number,
+    includeMilliseconds = true
+): string {
+    if (milliseconds < 0) {
+        return timeDurationDisplay(0, totalMilliseconds, includeMilliseconds);
+    }
+
+    milliseconds = Math.round(milliseconds);
+    const remainingMilliseconds = milliseconds % 1000;
+    milliseconds = (milliseconds - remainingMilliseconds) / 1000;
+    const seconds = milliseconds % 60;
+    milliseconds = (milliseconds - seconds) / 60;
+    const minutes = milliseconds % 60;
+
+    if (totalMilliseconds >= 3600000) {
+        const hours = (milliseconds - minutes) / 60;
+
+        if (includeMilliseconds) {
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(remainingMilliseconds).padStart(3, '0')}`;
+        }
+
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    if (includeMilliseconds) {
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(remainingMilliseconds).padStart(3, '0')}`;
+    }
+
+    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 export function getCurrentTimeString(): string {
@@ -184,7 +236,6 @@ export function mockSurroundingSubtitles(
             originalEnd: afterTimestamp - offset,
             track: middleSubtitle.track,
             index: middleSubtitle.index,
-            richText: middleSubtitle.richText,
         });
     }
 
@@ -198,7 +249,6 @@ export function mockSurroundingSubtitles(
             originalEnd: middleSubtitle.start - offset,
             track: middleSubtitle.track,
             index: middleSubtitle.index,
-            richText: middleSubtitle.richText,
         });
     }
 
@@ -305,20 +355,24 @@ export function download(blob: Blob, name: string) {
     a.remove();
 }
 
-export function computeStyles({
-    subtitleColor,
-    subtitleSize,
-    subtitleThickness,
-    subtitleOutlineThickness,
-    subtitleOutlineColor,
-    subtitleShadowThickness,
-    subtitleShadowColor,
-    subtitleBackgroundOpacity,
-    subtitleBackgroundColor,
-    subtitleFontFamily,
-    subtitleCustomStyles,
-}: TextSubtitleSettings) {
+export function computeStyles(
+    {
+        subtitleColor,
+        subtitleSize,
+        subtitleThickness,
+        subtitleOutlineThickness,
+        subtitleOutlineColor,
+        subtitleShadowThickness,
+        subtitleShadowColor,
+        subtitleBackgroundOpacity,
+        subtitleBackgroundColor,
+        subtitleFontFamily,
+        subtitleCustomStyles,
+    }: TextSubtitleSettings,
+    values: { [key: string]: string | number } = {}
+) {
     const styles: { [key: string]: any } = {
+        ...values,
         color: subtitleColor,
         fontSize: `${subtitleSize}px`,
         fontWeight: String(subtitleThickness),
@@ -377,6 +431,10 @@ export function isNumeric(str: string) {
 
 export const HAS_LETTER_REGEX = /\p{L}/u;
 
+export const NEWLINES_REGEX = /\r?\n/g;
+
+export const STERM_AND_NEWLINES_REGEX = /(?:\p{STerm}|\r?\n)+/u;
+
 export const ONLY_ASCII_LETTERS_REGEX = /^[a-z]+$/i;
 
 const KANA_ONLY_REGEX =
@@ -386,9 +444,110 @@ export function isKanaOnly(text: string) {
 }
 
 const KATAKANA_ONLY_REGEX =
-    /^[\u30A0-\u30FF\u31F0-\u31FF\u3099\u309A\uFF61-\uFF9F\u{1B000}-\u{1B0FF}\u{1B100}-\u{1B12F}\u{1B130}-\u{1B16F}\u{1AFF0}-\u{1AFFF}]+$/u;
+    /^(?:[\u30A0-\u30FF\u31F0-\u31FF\uFF61-\uFF9F\u{1B000}-\u{1B0FF}\u{1B100}-\u{1B12F}\u{1B130}-\u{1B16F}\u{1AFF0}-\u{1AFFF}]|\u3099|\u309A)+$/u;
 export function isKatakanaOnly(text: string) {
     return KATAKANA_ONLY_REGEX.test(text.normalize('NFC'));
+}
+
+const SMALL_KANAS = [
+    'ぁ',
+    'ぃ',
+    'ぅ',
+    'ぇ',
+    'ぉ',
+    'ゃ',
+    'ゅ',
+    'ょ',
+    'ゎ',
+    'ァ',
+    'ィ',
+    'ゥ',
+    'ェ',
+    'ォ',
+    'ャ',
+    'ュ',
+    'ョ',
+    'ヮ',
+];
+
+export function getKanaMoras(kana: string): string[] {
+    const moras: string[] = [];
+    for (const char of kana.normalize('NFC')) {
+        if (SMALL_KANAS.includes(char) && moras.length > 0) moras[moras.length - 1] += char;
+        else moras.push(char);
+    }
+    return moras;
+}
+
+export function isKanaMoraPitchHigh(index: number, positions: PitchAccentPosition): boolean {
+    if (typeof positions === 'string') return positions[index] === 'H';
+    if (positions === 0) return index > 0;
+    if (positions === 1) return index < 1;
+    return index > 0 && index < positions;
+}
+
+export function isAttachedParticlePitchHigh(
+    candidateText: string | undefined,
+    prevPitch: PitchAccentContext
+): boolean | null {
+    if (candidateText?.length !== 1 || !isKanaOnly(candidateText)) return null;
+    const { prevMoras, prevPitchAccent } = prevPitch;
+    if (!prevMoras?.length || prevPitchAccent === undefined) return null;
+    if (typeof prevPitchAccent === 'number') return isKanaMoraPitchHigh(prevMoras.length, prevPitchAccent); // Position as a number is handled naturally even with out-of-range mora counts
+    if (prevPitchAccent.length > prevMoras.length) return isKanaMoraPitchHigh(prevMoras.length, prevPitchAccent); // Position explicitly includes pitch for attaching particles
+    if (prevPitchAccent.length) return isKanaMoraPitchHigh(prevMoras.length - 1, prevPitchAccent); // Default to the same pitch as the last mora
+    return null;
+}
+
+export interface PitchAccentContext {
+    prevMoras?: string[];
+    prevPitchAccent?: PitchAccentPosition;
+    prevPitchHigh?: boolean;
+}
+export function clearPitchAccentContext(pitchCtx: PitchAccentContext) {
+    pitchCtx.prevMoras = undefined;
+    pitchCtx.prevPitchAccent = undefined;
+    pitchCtx.prevPitchHigh = undefined;
+}
+
+export function normalizeForSearch(text: string): string {
+    return text
+        .normalize('NFD')
+        .replace(/\p{M}/gu, '')
+        .replace(/ß/g, 'ss')
+        .replace(/ẞ/g, 'SS')
+        .replace(/æ/g, 'ae')
+        .replace(/Æ/g, 'AE')
+        .replace(/œ/g, 'oe')
+        .replace(/Œ/g, 'OE')
+        .replace(/ø/g, 'o')
+        .replace(/Ø/g, 'O')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .replace(/ł/g, 'l')
+        .replace(/Ł/g, 'L')
+        .normalize('NFC');
+}
+
+export function normalizeSearchText(text: string): string {
+    return text.normalize('NFKC').trim().toLocaleLowerCase();
+}
+
+export function normalizedLookupTerms(...texts: Array<string | null | undefined>): string[] {
+    return Array.from(
+        new Set(
+            texts
+                .flatMap((text) => {
+                    if (!text) return [];
+                    const normalized = normalizeForSearch(text);
+                    if (!normalized.length || normalized === text) return [text];
+                    return [text, normalized];
+                })
+                .filter((text) => Boolean(text))
+                .map(normalizeSearchText)
+                .filter((text) => text.length)
+        )
+    );
 }
 
 // https://stackoverflow.com/questions/63116039/camelcase-to-kebab-case
@@ -407,8 +566,11 @@ function kebabize(str: string) {
     return kebabized;
 }
 
-export function computeStyleString(styleSettings: TextSubtitleSettings) {
-    const stylesMap = computeStyles(styleSettings);
+export function computeStyleString(
+    styleSettings: TextSubtitleSettings,
+    values: { [key: string]: string | number } = {}
+) {
+    const stylesMap = computeStyles(styleSettings, values);
     const styleList = [];
 
     for (const [key, value] of Object.entries(stylesMap)) {
@@ -420,7 +582,7 @@ export function computeStyleString(styleSettings: TextSubtitleSettings) {
 
 // https://stackoverflow.com/questions/5623838/rgb-to-hex-and-hex-to-rgb
 export function hexToRgb(hex: string): Rgb {
-    var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
 
     if (!result) {
         return { r: 255, g: 255, b: 255 };
@@ -448,6 +610,11 @@ export function percentToHex2(percent: number): string {
 
 export function sourceString(subtitleFileName: string, timestamp: number) {
     return timestamp === 0 ? subtitleFileName : `${subtitleFileName} (${humanReadableTime(timestamp, true, true)})`;
+}
+
+export function buildSubtitleTracks(subtitles: { track: number }[], subtitleFileNames: string[]): SubtitleTrack[] {
+    const trackNumbers = [...new Set(subtitles.map((s) => s.track))].sort((a, b) => a - b);
+    return trackNumbers.map((trackNumber) => ({ trackNumber, fileName: subtitleFileNames[trackNumber] ?? '' }));
 }
 
 export function seekWithNudge(media: HTMLMediaElement, timestampSeconds: number) {
@@ -534,11 +701,11 @@ type Block = {
 /**
  * Iterates over a string in "blocks" where a "block" represents a collection of substrings of the passed-in string.
  * @param str The string to iterate over.
- * @param block Function respresenting the substrings to iterate over.
+ * @param block Function representing the substrings to iterate over.
  * @param callback Called when iterating over each block, and also gaps between blocks. When iterating over a gap,
  * the optional block argument is undefined.
  */
-export function iterateOverStringInBlocks<T, B extends Block>(
+export function iterateOverStringInBlocks<B extends Block>(
     str: string,
     block: (str: string, blockIndex: number) => B | undefined,
     callback: (left: number, right: number, block?: B) => void
@@ -578,20 +745,111 @@ export const areTokenizationsEqual = (a: Tokenization | undefined, b: Tokenizati
     return arrayEquals(a.tokens, b.tokens, areTokensEqual);
 };
 
-const areTokensEqual = (aToken: any, bToken: any) => {
-    if (!arrayEquals(aToken.pos, bToken.pos)) return false;
-    if (aToken.status !== bToken.status) return false;
-    if (!arrayEquals(aToken.states, bToken.states)) return false;
-    if (!arrayEquals(aToken.readings, bToken.readings, areTokenReadingsEqual)) return false;
-    if (aToken.frequency !== bToken.frequency) return false;
+type TokenReadingComparators = {
+    [K in keyof TokenReading]: (a: TokenReading[K], b: TokenReading[K]) => boolean;
+};
+
+const tokenReadingComparators: TokenReadingComparators = {
+    pos: (a, b) => arrayEquals(a, b),
+    reading: (a, b) => a === b,
+} satisfies Required<TokenReadingComparators>;
+
+function compareTokenReadingField<K extends keyof TokenReading>(key: K, a: TokenReading, b: TokenReading): boolean {
+    return tokenReadingComparators[key](a[key], b[key]);
+}
+
+const areTokenReadingsEqual = (a: TokenReading, b: TokenReading) => {
+    if (a === b) return true;
+    for (const key in tokenReadingComparators) {
+        if (!compareTokenReadingField(key as keyof TokenReading, a, b)) {
+            return false;
+        }
+    }
     return true;
 };
 
-const areTokenReadingsEqual = (a: TokenReading, b: TokenReading) =>
-    arrayEquals(a.pos, b.pos) && a.reading === b.reading;
+type TokenComparators = {
+    [K in keyof Token]: (a: Token[K], b: Token[K]) => boolean;
+};
+
+const tokenComparators: TokenComparators = {
+    pos: (a, b) => arrayEquals(a, b),
+    states: (a, b) => arrayEquals(a, b),
+    status: (a, b) => a === b,
+    readings: (a, b) => arrayEquals(a, b, areTokenReadingsEqual),
+    frequency: (a, b) => a === b,
+    pitchAccent: (a, b) => a === b,
+    groupingKey: (a, b) => a === b,
+    lemmasGroupingKey: (a, b) => a === b,
+    externalCandidateStatuses: (a, b) => arrayEquals(a, b),
+} satisfies Required<TokenComparators>;
+
+function compareTokenField<K extends keyof Token>(key: K, a: Token, b: Token): boolean {
+    return tokenComparators[key]!(a[key], b[key]);
+}
+
+const areTokensEqual = (aToken: Token, bToken: Token) => {
+    if (aToken === bToken) return true;
+    for (const key in tokenComparators) {
+        if (!compareTokenField(key as keyof Token, aToken, bToken)) {
+            return false;
+        }
+    }
+    return true;
+};
 
 /**
- * An async safe semaphore implementation that preserves FIFO order.
+ * We prefer the highest status for a given token (e.g. duplicate anki cards)
+ */
+export function getTokenStatus(
+    statuses: TokenStatusInfo[],
+    dictionaryAnkiTreatSuspended: TokenStatus | 'NORMAL'
+): TokenStatus {
+    if (statuses.length && dictionaryAnkiTreatSuspended !== 'NORMAL') {
+        const unsuspended = statuses.filter((status) => !status.suspended);
+        if (!unsuspended.length) return dictionaryAnkiTreatSuspended;
+        statuses = unsuspended;
+    }
+    if (statuses.some((c) => c.status === TokenStatus.MATURE)) return TokenStatus.MATURE;
+    if (statuses.some((c) => c.status === TokenStatus.YOUNG)) return TokenStatus.YOUNG;
+    if (statuses.some((c) => c.status === TokenStatus.GRADUATED)) return TokenStatus.GRADUATED;
+    if (statuses.some((c) => c.status === TokenStatus.LEARNING)) return TokenStatus.LEARNING;
+    return TokenStatus.UNKNOWN;
+}
+
+export function dedupeTokenStatusInfos(statuses: TokenStatusInfo[]): TokenStatusInfo[] | undefined {
+    if (!statuses.length) return;
+    const seen = new Set<string>();
+    const deduped: TokenStatusInfo[] = [];
+    for (const status of statuses) {
+        const key = JSON.stringify([
+            status.cardId,
+            status.waniKani?.subjectId,
+            status.waniKani?.subjectLevel,
+            status.waniKani?.assignmentId,
+            status.waniKani?.availableAt,
+            status.status,
+            status.suspended,
+        ]);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(status);
+    }
+    return deduped;
+}
+
+/**
+ * Normalize a string for dictionary lookup, currently only by case folding.
+ * If normalization expands from just case folding then the entire annotation and db logic will need
+ * to be revisited since Dexie supports case folding natively through anyOfIgnoreCase() but nothing custom.
+ */
+export function normalizeToken(value: string): string {
+    return value.toLowerCase();
+}
+
+/**
+ * An async safe semaphore implementation that preserves FIFO order (within a priority group).
+ * Priority levels are set with acquire(), higher numbers indicate a higher priority.
  * It uses an id for release to allow multiple releases (e.g try/finally with early releases).
  * @param options.permits The number of concurrent permits.
  * @param options.lifetimeMs Maximum lifetime of an acquire before automatic release (prevents deadlocks if callers don't call this.release()).
@@ -601,7 +859,7 @@ export class AsyncSemaphore {
     private lifetimeMs?: number;
     private acquired: Set<number> = new Set();
     private timers: Map<number, ReturnType<typeof setTimeout>> = new Map();
-    private waiting: ((id: number) => void)[] = [];
+    private waiting: Map<number, ((id: number) => void)[]> = new Map();
     private counter: number = 0;
     private getNextId = () => {
         if (this.counter === Number.MAX_SAFE_INTEGER) this.counter = 0;
@@ -631,13 +889,15 @@ export class AsyncSemaphore {
         return id;
     }
 
-    acquire(): Promise<number> {
+    acquire(priority: number = 0): Promise<number> {
         return new Promise<number>((resolve) => {
             if (this.permits > 0) {
                 this.permits--;
                 resolve(this._acquire());
             } else {
-                this.waiting.push(resolve);
+                const queue = this.waiting.get(priority);
+                if (queue) queue.push(resolve);
+                else this.waiting.set(priority, [resolve]);
             }
         });
     }
@@ -648,8 +908,11 @@ export class AsyncSemaphore {
         clearTimeout(this.timers.get(id)!);
         this.timers.delete(id);
 
-        if (this.waiting.length > 0) {
-            this.waiting.shift()!(this._acquire());
+        if (this.waiting.size > 0) {
+            const highestPriority = Math.max(...this.waiting.keys());
+            const queue = this.waiting.get(highestPriority)!;
+            queue.shift()!(this._acquire());
+            if (!queue.length) this.waiting.delete(highestPriority);
         } else {
             this.permits++;
         }

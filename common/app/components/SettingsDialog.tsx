@@ -112,6 +112,11 @@ export default function SettingsDialog({
                     extensionSupportsExportCardBind={extension.supportsExportCardBind}
                     extensionSupportsPageSettings={extension.supportsPageSettings}
                     extensionSupportsDictionary={extension.supportsDictionary}
+                    extensionSupportsDictionaryBrowser={extension.supportsDictionaryBrowser}
+                    extensionSupportsDictionaryWaniKani={extension.supportsDictionaryWaniKani}
+                    extensionSupportsDictionaryMatchAcrossScripts={extension.supportsDictionaryMatchAcrossScripts}
+                    extensionSupportsSeekableTrackSetting={extension.supportsSeekableTrackSetting}
+                    extensionSupportsAutoCopyableTrackSetting={extension.supportsAutoCopyableTrackSetting}
                     extensionSupportsDictionaryTokenStatusDisplayAlpha={
                         extension.supportsDictionaryTokenStatusDisplayAlpha
                     }

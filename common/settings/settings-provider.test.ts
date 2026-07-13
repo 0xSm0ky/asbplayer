@@ -5,6 +5,7 @@ import {
     SettingsProvider,
     SettingsStorage,
     SubtitleAlignment,
+    VideoSubtitleSplitBehavior,
     changeForTextSubtitleSetting,
     defaultSettings,
     prefixedSettings,
@@ -101,6 +102,8 @@ it('can change the value of value-typed settings', async () => {
     const provider = new SettingsProvider(new MockSettingsStorage());
     await provider.set({ audioField: 'test-value' });
     expect(await provider.getSingle('audioField')).toBe('test-value');
+    await provider.set({ videoSubtitleSplitBehavior: VideoSubtitleSplitBehavior.autoMaximizeVideo });
+    expect(await provider.getSingle('videoSubtitleSplitBehavior')).toBe(VideoSubtitleSplitBehavior.autoMaximizeVideo);
 });
 
 it('returns the same object references if the values inside do not change', async () => {
@@ -208,7 +211,7 @@ it('calculates diff for text subtitle settings', () => {
                 subtitleBackgroundOpacity: 0,
                 subtitleFontFamily: 'ToppanBunkyuMidashiGothicStdN-ExtraBold',
                 subtitleBlur: true,
-                subtitleAlignment: 'bottom' as SubtitleAlignment,
+                subtitleAlignment: 'bottom',
                 subtitleCustomStyles: [],
             },
             {
@@ -223,7 +226,7 @@ it('calculates diff for text subtitle settings', () => {
                 subtitleBackgroundOpacity: 0,
                 subtitleFontFamily: 'ToppanBunkyuMidashiGothicStdN-ExtraBold',
                 subtitleBlur: false,
-                subtitleAlignment: 'bottom' as SubtitleAlignment,
+                subtitleAlignment: 'bottom',
                 subtitleCustomStyles: [{ key: 'opacity', value: '0.5' }],
             },
         ],
@@ -245,7 +248,7 @@ it('calculates diff for text subtitle settings', () => {
                 subtitleBackgroundOpacity: 0,
                 subtitleFontFamily: 'ToppanBunkyuMidashiGothicStdN-ExtraBold',
                 subtitleBlur: true,
-                subtitleAlignment: 'bottom' as SubtitleAlignment,
+                subtitleAlignment: 'bottom',
                 subtitleCustomStyles: [],
             },
         ],
@@ -268,7 +271,7 @@ it('targets correct values for text subtitle ', () => {
         subtitleBackgroundOpacity: 0,
         subtitleFontFamily: 'ToppanBunkyuMidashiGothicStdN-ExtraBold',
         subtitleBlur: false,
-        subtitleAlignment: 'bottom' as SubtitleAlignment,
+        subtitleAlignment: 'bottom',
         subtitleCustomStyles: [],
     });
     expect(textSubtitleSettingsForTrack(subtitleSettings, 1)).toEqual({
@@ -283,7 +286,7 @@ it('targets correct values for text subtitle ', () => {
         subtitleBackgroundOpacity: 0,
         subtitleFontFamily: 'ToppanBunkyuMidashiGothicStdN-ExtraBold',
         subtitleBlur: true,
-        subtitleAlignment: 'bottom' as SubtitleAlignment,
+        subtitleAlignment: 'bottom',
         subtitleCustomStyles: [],
     });
 });

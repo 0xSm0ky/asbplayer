@@ -18,7 +18,8 @@ export interface ElementOverlayParams {
     fullscreenContentClassName: string;
     offsetAnchor: OffsetAnchor;
     contentPositionOffset?: number;
-    contentWidthPercentage: number;
+    contentWidthPercentage?: number;
+    onContainerStyles?: (container: HTMLElement) => void;
     onMouseOver: (event: MouseEvent) => void;
     onMouseOut: (event: MouseEvent) => void;
 }
@@ -35,7 +36,7 @@ export interface ElementOverlay {
     fullscreenContentClassName: string;
     offsetAnchor: OffsetAnchor;
     contentPositionOffset: number;
-    contentWidthPercentage: number;
+    contentWidthPercentage?: number;
     displayingElements: () => Iterable<HTMLElement>;
     containerElement: HTMLElement | undefined;
 }
@@ -49,13 +50,14 @@ export class CachingElementOverlay implements ElementOverlay {
     private defaultContentElement?: HTMLElement;
     private nonFullscreenContainerElement?: HTMLElement;
     private nonFullscreenElementFullscreenChangeListener?: (this: any, event: Event) => any;
-    private nonFullscreenStylesInterval?: NodeJS.Timeout;
-    private nonFullscreenElementFullscreenPollingInterval?: NodeJS.Timeout;
+    private nonFullscreenStylesInterval?: ReturnType<typeof setInterval>;
+    private nonFullscreenElementFullscreenPollingInterval?: ReturnType<typeof setInterval>;
     private fullscreenElementFullscreenChangeListener?: (this: any, event: Event) => any;
-    private fullscreenElementFullscreenPollingInterval?: NodeJS.Timeout;
-    private fullscreenStylesInterval?: NodeJS.Timeout;
+    private fullscreenElementFullscreenPollingInterval?: ReturnType<typeof setInterval>;
+    private fullscreenStylesInterval?: ReturnType<typeof setInterval>;
     private onMouseOver: (event: MouseEvent) => void;
     private onMouseOut: (event: MouseEvent) => void;
+    private onContainerStyles?: (container: HTMLElement) => void;
 
     nonFullscreenContainerClassName: string;
     nonFullscreenContentClassName: string;
@@ -63,7 +65,7 @@ export class CachingElementOverlay implements ElementOverlay {
     fullscreenContentClassName: string;
     offsetAnchor: OffsetAnchor = OffsetAnchor.bottom;
     contentPositionOffset: number;
-    contentWidthPercentage: number;
+    contentWidthPercentage?: number;
 
     constructor({
         targetElement,
@@ -76,6 +78,7 @@ export class CachingElementOverlay implements ElementOverlay {
         contentWidthPercentage,
         onMouseOver,
         onMouseOut,
+        onContainerStyles,
     }: ElementOverlayParams) {
         this.targetElement = targetElement;
         this.nonFullscreenContainerClassName = nonFullscreenContainerClassName;
@@ -87,6 +90,7 @@ export class CachingElementOverlay implements ElementOverlay {
         this.contentWidthPercentage = contentWidthPercentage;
         this.onMouseOver = onMouseOver;
         this.onMouseOut = onMouseOut;
+        this.onContainerStyles = onContainerStyles;
 
         // Necessary for token highlighting on hover
         document.body.classList.add('asbplayer-token-container');
@@ -98,7 +102,7 @@ export class CachingElementOverlay implements ElementOverlay {
             for (const content of container.childNodes) {
                 for (const el of content.childNodes) {
                     if (el instanceof HTMLElement) {
-                        yield el as HTMLElement;
+                        yield el;
                     }
                 }
             }
@@ -129,6 +133,18 @@ export class CachingElementOverlay implements ElementOverlay {
 
     cacheHtml(key: string, html: string) {
         this.domCache.add(key, html);
+    }
+
+    hasCachedHtml(key: string) {
+        return this.domCache.has(key);
+    }
+
+    removeCachedHtml(key: string) {
+        this.domCache.delete(key);
+    }
+
+    cachedHtmlKeys() {
+        return this.domCache.keys();
     }
 
     setHtml(htmls: KeyedHtml[]) {
@@ -178,6 +194,7 @@ export class CachingElementOverlay implements ElementOverlay {
         const toggle = () => {
             if (document.fullscreenElement) {
                 container.style.setProperty('display', 'none', 'important');
+                this._transferChildren(container, this._fullscreenContainerElement());
             } else {
                 container.style.display = '';
 
@@ -188,7 +205,7 @@ export class CachingElementOverlay implements ElementOverlay {
         };
 
         toggle();
-        this.nonFullscreenElementFullscreenChangeListener = (e) => toggle();
+        this.nonFullscreenElementFullscreenChangeListener = () => toggle();
         this.nonFullscreenStylesInterval = setInterval(() => this._applyContainerStyles(container), 1000);
         this.nonFullscreenElementFullscreenPollingInterval = setInterval(() => toggle(), 1000);
         document.addEventListener('fullscreenchange', this.nonFullscreenElementFullscreenChangeListener);
@@ -208,14 +225,13 @@ export class CachingElementOverlay implements ElementOverlay {
         this._applyContainerStyles(container);
         this._findFullscreenParentElement(container).appendChild(container);
         container.style.setProperty('display', 'none', 'important');
-        const that = this;
 
         const toggle = () => {
             if (document.fullscreenElement) {
                 if (container.style.display === 'none') {
                     container.style.display = '';
                     container.remove();
-                    that._findFullscreenParentElement(container).appendChild(container);
+                    this._findFullscreenParentElement(container).appendChild(container);
                 }
 
                 if (this.nonFullscreenContainerElement) {
@@ -223,11 +239,12 @@ export class CachingElementOverlay implements ElementOverlay {
                 }
             } else if (!document.fullscreenElement) {
                 container.style.setProperty('display', 'none', 'important');
+                this._transferChildren(container, this._nonFullscreenContainerElement());
             }
         };
 
         toggle();
-        this.fullscreenElementFullscreenChangeListener = (e) => toggle();
+        this.fullscreenElementFullscreenChangeListener = () => toggle();
         this.fullscreenStylesInterval = setInterval(() => this._applyContainerStyles(container), 1000);
         this.fullscreenElementFullscreenPollingInterval = setInterval(() => toggle(), 1000);
         document.addEventListener('fullscreenchange', this.fullscreenElementFullscreenChangeListener);
@@ -244,6 +261,10 @@ export class CachingElementOverlay implements ElementOverlay {
             return document.body;
         }
 
+        const targetElementRootNode = this.targetElement.getRootNode();
+        const rootNode: ShadowRoot | Document =
+            targetElementRootNode instanceof ShadowRoot ? targetElementRootNode : document;
+
         let chosen: HTMLElement | undefined = undefined;
 
         do {
@@ -254,7 +275,7 @@ export class CachingElementOverlay implements ElementOverlay {
                 (typeof chosen === 'undefined' ||
                     // Typescript is not smart enough to know that it's possible for 'chosen' to be defined here
                     rect.height >= (chosen as HTMLElement).getBoundingClientRect().height) &&
-                this._clickable(current, testNode)
+                this._clickable(rootNode, current, testNode)
             ) {
                 chosen = current;
                 break;
@@ -370,7 +391,7 @@ export class CachingElementOverlay implements ElementOverlay {
         if (this.contentWidthPercentage === -1) {
             container.style.maxWidth = rect.width + 'px';
             container.style.width = '';
-        } else {
+        } else if (this.contentWidthPercentage !== undefined) {
             container.style.maxWidth = '';
             container.style.width =
                 Math.min(window.innerWidth, (rect.width * this.contentWidthPercentage) / 100) + 'px';
@@ -386,12 +407,14 @@ export class CachingElementOverlay implements ElementOverlay {
             container.style.top = clampedY + this.contentPositionOffset + 'px';
             container.style.bottom = '';
         }
+
+        this.onContainerStyles?.(container);
     }
 
-    private _clickable(container: HTMLElement, element: HTMLElement): boolean {
+    private _clickable(rootNode: Document | ShadowRoot, container: HTMLElement, element: HTMLElement): boolean {
         container.appendChild(element);
         const rect = element.getBoundingClientRect();
-        const clickedElement = document.elementFromPoint(rect.x, rect.y);
+        const clickedElement = rootNode.elementFromPoint(rect.x, rect.y);
         const clickable = element.isSameNode(clickedElement) || element.contains(clickedElement);
         element.remove();
         return clickable;

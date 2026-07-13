@@ -38,7 +38,7 @@ const TableCell = withStyles((theme) => ({
     },
 }))(MuiTableCell);
 
-const BorderedTableCell = withStyles((theme) => ({
+const BorderedTableCell = withStyles(() => ({
     root: {},
 }))(MuiTableCell);
 
@@ -195,12 +195,19 @@ const dependencies: Dependency[] = [
         licenseLink: 'https://github.com/cure53/DOMPurify/blob/main/LICENSE',
         purpose: 'HTML sanitization',
     },
+    {
+        name: 'react-virtuoso',
+        projectLink: 'https://github.com/petyosi/react-virtuoso',
+        license: 'MIT',
+        licenseLink: 'https://github.com/petyosi/react-virtuoso/blob/main/README.md#license',
+        purpose: 'Virtualized subtitle list rendering',
+    },
 ];
 
 const dependencyPurposeCounts: { [key: string]: number } = {};
 
 for (const dep of dependencies) {
-    let count = dependencyPurposeCounts[dep.purpose] ?? 0;
+    const count = dependencyPurposeCounts[dep.purpose] ?? 0;
     dependencyPurposeCounts[dep.purpose] = count + 1;
 }
 
@@ -208,13 +215,12 @@ const About = ({ appVersion, extensionVersion }: Props) => {
     const theme = useTheme<Theme>();
     const { t } = useTranslation();
     const renderedPurpose: { [key: string]: boolean } = {};
-    let purposeIndex = 0;
     return (
         <Box p={1} style={{ width: '100%' }}>
             <Box style={{ width: '100%', textAlign: 'center' }}>
                 <LogoIcon style={{ width: 48, height: 48 }} />
                 <br />
-                <Link variant="h5" href="https://github.com/killergerbah/asbplayer">
+                <Link variant="h5" href="https://github.com/asbplayer/asbplayer">
                     asbplayer
                 </Link>
                 <br />
@@ -222,7 +228,7 @@ const About = ({ appVersion, extensionVersion }: Props) => {
                     <>
                         <Typography variant="caption">
                             {t('about.appVersion')}{' '}
-                            <Link href={`https://github.com/killergerbah/asbplayer/commit/${appVersion}`}>
+                            <Link href={`https://github.com/asbplayer/asbplayer/commit/${appVersion}`}>
                                 {appVersion}
                             </Link>
                         </Typography>
@@ -232,7 +238,7 @@ const About = ({ appVersion, extensionVersion }: Props) => {
                 {extensionVersion && (
                     <Typography variant="caption">
                         {t('about.extensionVersion')}{' '}
-                        <Link href={`https://github.com/killergerbah/asbplayer/releases/tag/v${extensionVersion}`}>
+                        <Link href={`https://github.com/asbplayer/asbplayer/releases/tag/v${extensionVersion}`}>
                             {extensionVersion}
                         </Link>
                     </Typography>
@@ -285,7 +291,6 @@ const About = ({ appVersion, extensionVersion }: Props) => {
 
                                 if (renderedPurpose[d.purpose] === undefined) {
                                     alreadyRenderedPurpose = false;
-                                    purposeIndex++;
                                 } else {
                                     alreadyRenderedPurpose = true;
                                 }
@@ -293,7 +298,7 @@ const About = ({ appVersion, extensionVersion }: Props) => {
                                 renderedPurpose[d.purpose] = true;
 
                                 let CellComponent = TableCell;
-                                let nextPurpose = dependencies[index + 1]?.purpose;
+                                const nextPurpose = dependencies[index + 1]?.purpose;
 
                                 if (nextPurpose !== undefined && d.purpose !== nextPurpose) {
                                     CellComponent = BorderedTableCell;

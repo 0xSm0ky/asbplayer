@@ -1,4 +1,7 @@
 import type { AnkiSettings, TokenState, TokenStatus } from '../settings/settings';
+import type { OnlineSubtitleSourceConfig } from '../global-state';
+import type { TokenStatusInfo } from '../dictionary-db';
+import type { PitchAccentPosition } from '../yomitan';
 
 type Profile = { name: string };
 
@@ -30,7 +33,11 @@ export interface Token {
     states: TokenState[];
     status?: TokenStatus | null; // null means "error"
     readings: TokenReading[];
-    frequency?: number;
+    frequency?: number | null; // null means no frequency data
+    pitchAccent?: PitchAccentPosition | null; // null means no pitch accent data
+    groupingKey?: string; // Stable key for equivalence aggregation
+    lemmasGroupingKey?: string; // Stable key for equivalence aggregation based on lemmas (statistics)
+    externalCandidateStatuses?: TokenStatusInfo[];
 }
 
 export interface Tokenization {
@@ -48,18 +55,13 @@ export interface SubtitleModel {
     readonly track: number;
     readonly index?: number;
     readonly tokenization?: Tokenization;
-    readonly richText?: string;
 }
 
 export interface IndexedSubtitleModel extends SubtitleModel {
     readonly index: number;
 }
 
-export interface RichSubtitleModel extends IndexedSubtitleModel {
-    richText?: string;
-}
-
-export interface TokenizedSubtitleModel extends RichSubtitleModel {
+export interface TokenizedSubtitleModel extends IndexedSubtitleModel {
     originalText?: string;
     tokenization?: Tokenization;
 }
@@ -95,16 +97,20 @@ export interface CopyHistoryItem extends CardModel {
     readonly timestamp: number;
 }
 
-export enum ImageErrorCode {
+export enum MediaFragmentErrorCode {
     captureFailed = 1,
     fileLinkLost = 2,
 }
 
-export interface ImageModel {
+export interface MediaFragmentModel {
     readonly base64: string;
-    readonly extension: 'jpeg';
-    readonly error?: ImageErrorCode;
+    readonly extension: 'jpeg' | 'webm';
+    readonly error?: MediaFragmentErrorCode;
 }
+
+export const ImageErrorCode = MediaFragmentErrorCode;
+export type ImageErrorCode = MediaFragmentErrorCode;
+export type ImageModel = MediaFragmentModel;
 
 export enum AudioErrorCode {
     drmProtected = 1,
@@ -122,7 +128,7 @@ export interface AudioModel {
     readonly error?: AudioErrorCode;
 }
 
-export type AnkiExportMode = 'gui' | 'updateLast' | 'default';
+export type AnkiExportMode = 'gui' | 'updateLast' | 'updateSpecific' | 'default';
 
 export interface AnkiDialogSettings extends AnkiSettings {
     themeType: string;
@@ -150,6 +156,7 @@ export interface AnkiUiState extends CardTextFieldValues {
 
 export interface AnkiUiInitialState extends AnkiUiState {
     readonly type: 'initial';
+    readonly cardSelectOpen?: boolean;
 }
 
 export interface AnkiUiResumeState extends AnkiUiState {
@@ -230,9 +237,15 @@ export interface VideoDataUiModel {
     openReason?: VideoDataUiOpenReason;
     openedFromAsbplayerId?: string;
     defaultCheckboxState?: boolean;
+    onlineSubtitleSourceConfig?: OnlineSubtitleSourceConfig;
     settings: VideoDataUiSettings;
     hasSeenFtue: boolean;
     hideRememberTrackPreferenceToggle: boolean;
+}
+
+export interface SubtitleTrack {
+    trackNumber: number;
+    fileName: string;
 }
 
 export interface VideoTabModel {
@@ -241,6 +254,8 @@ export interface VideoTabModel {
     src: string; // Video src
     subscribed: boolean; // Whether the video element is subscribed to extension messages
     synced: boolean; // Whether the video element has received subtitles
+    loadedSubtitles: boolean; // Whether a non-empty subtitle track is loaded
+    subtitleTracks?: SubtitleTrack[]; // The loaded non-empty subtitle tracks (track number + file name)
     syncedTimestamp?: number;
     faviconUrl?: string;
 }
@@ -262,6 +277,7 @@ export enum PostMineAction {
     showAnkiDialog = 1,
     updateLastCard = 2,
     exportCard = 3,
+    showUpdateCardDialog = 4,
 }
 
 export enum PostMinePlayback {
@@ -309,4 +325,8 @@ export enum ControlType {
     timeDisplay = 0,
     subtitleOffset = 1,
     playbackRate = 2,
+}
+
+export interface BrowserFeatures {
+    sidePanel: boolean;
 }

@@ -1,4 +1,29 @@
-import { subtitleTimestampWithDelay, surroundingSubtitlesAroundInterval } from './util';
+import {
+    compareSubtitlesForDisplay,
+    subtitleTimestampWithDelay,
+    surroundingSubtitlesAroundInterval,
+    timeDurationDisplay,
+} from './util';
+
+it('correctly displays timestamps less than 100 ms', () => {
+    expect(timeDurationDisplay(50, 100, true)).toEqual('00:00.050');
+});
+
+it('correctly displays timestamps less than 100 ms (2)', () => {
+    expect(timeDurationDisplay(1, 100, true)).toEqual('00:00.001');
+});
+
+it('correctly displays timestamps less than 100 ms (3)', () => {
+    expect(timeDurationDisplay(99, 99, true)).toEqual('00:00.099');
+});
+
+it('correctly displays timestamps', () => {
+    expect(timeDurationDisplay(999, 1000, true)).toEqual('00:00.999');
+});
+
+it('correctly displays timestamps (2)', () => {
+    expect(timeDurationDisplay(1250, 1250, true)).toEqual('00:01.250');
+});
 
 function subtitle(text: string, start: number, end: number) {
     return { text, start, end, originalStart: start, originalEnd: end, track: 0 };
@@ -39,4 +64,32 @@ it('computes subtitle timestamp with delay and clamps to subtitle interval', () 
     expect(subtitleTimestampWithDelay(sample, 1500)).toBe(2000);
     expect(subtitleTimestampWithDelay(sample, -300)).toBe(1700);
     expect(subtitleTimestampWithDelay(sample, -1500)).toBe(1000);
+});
+
+// Regression test for https://github.com/asbplayer/asbplayer/issues/1064:
+// cues sharing a start time (e.g. Netflix splitting one line into multiple cues)
+// can be returned out of source order by SubtitleCollection, so display code
+// must fall back to source index to keep cues in the order they were authored.
+it('sorts subtitles by track, falling back to source index for ties', () => {
+    const cues = [
+        { track: 0, index: 1 },
+        { track: 0, index: 0 },
+    ];
+
+    expect([...cues].sort(compareSubtitlesForDisplay)).toEqual([
+        { track: 0, index: 0 },
+        { track: 0, index: 1 },
+    ]);
+});
+
+it('sorts subtitles by track first, regardless of source index', () => {
+    const cues = [
+        { track: 1, index: 0 },
+        { track: 0, index: 1 },
+    ];
+
+    expect([...cues].sort(compareSubtitlesForDisplay)).toEqual([
+        { track: 0, index: 1 },
+        { track: 1, index: 0 },
+    ]);
 });
